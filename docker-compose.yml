@@ -1,7 +1,6 @@
-version: "3"
 services:
   postgres:
-    image: library/postgres:13
+    image: postgres:13
     container_name: postgres
     restart: on-failure
     environment:
@@ -12,7 +11,7 @@ services:
       - db-data:/var/lib/postgresql/data
       - ./postgres/:/docker-entrypoint-initdb.d/
     ports:
-      - "5432:5432"
+      - "5433:5432"
 
 # TODO добавить сервисы
 
