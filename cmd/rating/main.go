@@ -21,6 +21,7 @@ func main() {
 
 	r.GET("/api/rating", getRating)
 	r.PUT("/api/rating", updateRating)
+	r.GET("/manage/health", healthcheck)
 
 	log.Println("Rating service starting on port 8050")
 	r.Run(":8050")
@@ -92,4 +93,28 @@ func seedTestData() {
 		db.FirstOrCreate(&user, models.Rating{Username: user.Username})
 	}
 	log.Println("Test data seeded")
+}
+
+func healthcheck(c *gin.Context) {
+	sqlDB, err := db.DB()
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"status":  "DOWN",
+			"details": "Database connection failed",
+			"error":   err.Error(),
+		})
+		return
+	}
+	if err := sqlDB.Ping(); err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"status":  "DOWN",
+			"details": "Database ping failed",
+			"error":   err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "UP",
+		"details": "Service is healthy",
+	})
 }
