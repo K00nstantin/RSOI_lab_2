@@ -30,7 +30,7 @@ jobs:
           docker compose build
           docker compose up -d
           ./scripts/wait-script.sh
-          echo "✅ All services are healthy!"
+          echo "All services are healthy!"
 
       - name: Verify services
         run: |
@@ -38,8 +38,8 @@ jobs:
           docker compose ps
           echo ""
           echo "Health checks:"
-          curl -f http://localhost:8050/manage/health && echo " ✅ Rating"
-          curl -f http://localhost:8080/manage/health && echo " ✅ Gateway"
+          curl -f http://localhost:8050/manage/health && echo " Rating"
+          curl -f http://localhost:8080/manage/health && echo " Gateway"
 
       - name: Test API
         run: |
@@ -68,3 +68,4 @@ jobs:
       - name: Stop containers
         if: always()
         run: docker compose down -v
+        
