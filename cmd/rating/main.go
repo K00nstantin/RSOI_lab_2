@@ -17,14 +17,14 @@ func main() {
 
 	seedTestData()
 
-	r := gin.Default()
+	server := gin.Default()
 
-	r.GET("/api/rating", getRating)
-	r.PUT("/api/rating", updateRating)
-	r.GET("/manage/health", healthcheck)
+	server.GET("/api/rating", getRating)
+	server.PUT("/api/rating", updateRating)
+	server.GET("/manage/health", healthcheck)
 
 	log.Println("Rating service starting on port 8050")
-	r.Run(":8050")
+	server.Run(":8050")
 }
 
 func getRating(c *gin.Context) {
@@ -95,10 +95,10 @@ func seedTestData() {
 	log.Println("Test data seeded")
 }
 
-func healthcheck(c *gin.Context) {
+func healthcheck(ctx *gin.Context) {
 	sqlDB, err := db.DB()
 	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
+		ctx.JSON(http.StatusServiceUnavailable, gin.H{
 			"status":  "DOWN",
 			"details": "Database connection failed",
 			"error":   err.Error(),
@@ -106,14 +106,14 @@ func healthcheck(c *gin.Context) {
 		return
 	}
 	if err := sqlDB.Ping(); err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
+		ctx.JSON(http.StatusServiceUnavailable, gin.H{
 			"status":  "DOWN",
 			"details": "Database ping failed",
 			"error":   err.Error(),
 		})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
+	ctx.JSON(http.StatusOK, gin.H{
 		"status":  "UP",
 		"details": "Service is healthy",
 	})
