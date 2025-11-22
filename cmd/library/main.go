@@ -11,11 +11,12 @@ import (
 var db *gorm.DB
 
 func main() {
-	db = database.InitRatingDB()
+	db = database.InitLibraryDB()
 	server := gin.Default()
 
 	server.GET("/manage/health", healthcheck)
-	server.Run(":8070")
+
+	server.Run(":8060")
 }
 
 func healthcheck(ctx *gin.Context) {
@@ -23,7 +24,7 @@ func healthcheck(ctx *gin.Context) {
 	if err != nil {
 		ctx.JSON(http.StatusServiceUnavailable, gin.H{
 			"status":  "DOWN",
-			"details": "Database connection failed",
+			"details": "database connecting error",
 			"error":   err.Error(),
 		})
 		return
@@ -31,13 +32,13 @@ func healthcheck(ctx *gin.Context) {
 	if err := sqlDB.Ping(); err != nil {
 		ctx.JSON(http.StatusServiceUnavailable, gin.H{
 			"status":  "DOWN",
-			"details": "Database connection failed",
+			"details": "database connecting error",
 			"error":   err.Error(),
 		})
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{
 		"status":  "UP",
-		"details": "Host localhost:8070 is active",
+		"details": "Host localhost:8060 is active",
 	})
 }
