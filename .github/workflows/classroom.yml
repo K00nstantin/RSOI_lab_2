@@ -1,26 +1,25 @@
-name: Debug Workflow
+name: Classroom CI
 
-on: 
+on:
   push:
-    branches: [main, develop]
-  workflow_dispatch:  # Позволяет запускать вручную
+    branches: [ main, develop, master ]
+  pull_request:
+    branches: [ main, develop, master ]
+  workflow_dispatch:
 
 jobs:
-  debug:
+  classroom-tests:
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
         
-      - name: List files
+      - name: Debug info
         run: |
-          echo "Project structure:"
-          find . -type f -name "*.yml" -o -name "*.yaml" -o -name "Dockerfile" -o -name "*.sh" | head -20
+          echo "Classroom workflow is running!"
+          echo "Event: ${{ github.event_name }}"
+          echo "Branch: ${{ github.ref }}"
           
-      - name: Check scripts
-        run: |
-          ls -la wait-for.sh wait-script.sh 2>/dev/null || echo "Scripts not found"
-          which docker-compose || echo "docker-compose not found"
-          
-      - name: Simple test
-        run: echo "If you see this, workflow is working!"
+      - name: List all workflow files
+        run: find .github/workflows -name "*.yml" -o -name "*.yaml"
