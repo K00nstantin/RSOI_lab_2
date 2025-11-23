@@ -1,45 +1,9 @@
-name: Docker Build and Health Checks
-
-on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
-  workflow_dispatch:
-
-jobs:
-  build-images:
-    name: Build Docker Images
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.23'
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Build services
-      run: |
-        docker build -t rating-service:latest -f cmd/rating/Dockerfile .
-        docker build -t gateway-service:latest -f cmd/gateway/Dockerfile .
-        docker build -t library-service:latest -f cmd/library/Dockerfile .
-        docker build -t reservation-service:latest -f cmd/reservation/Dockerfile .
-
-    - name: Verify Docker images
-      run: docker images
-
-  health-checks:
-    name: Health Checks
-    runs-on: ubuntu-latest
-    needs: build-images
-    
-    steps:
+health-checks:
+  name: Health Checks
+  runs-on: ubuntu-latest
+  needs: build-images
+  
+  steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
@@ -49,44 +13,54 @@ jobs:
     - name: Start services with Docker Compose
       run: docker compose up -d --build
 
-    - name: Check service status immediately
+    - name: Check immediate service status
       run: |
-        echo "=== Initial service status ==="
+        echo "=== Immediate service status ==="
         docker compose ps
         echo "=== Rating service logs ==="
         docker compose logs rating-service || true
-        echo "=== Postgres logs ==="
-        docker compose logs postgres || true
+        sleep 10
 
     - name: Wait for PostgreSQL
-      run: ./scripts/wait-for.sh -t 60 "postgres:5432" -- echo "PostgreSQL is ready"
-
-    - name: Check rating service details
-      if: always()
       run: |
-        echo "=== Rating service status ==="
+        echo "Waiting for PostgreSQL..."
+        timeout 60 bash -c 'until docker compose exec postgres pg_isready -U program -d ratings; do sleep 2; done'
+
+    - name: Debug rating service
+      run: |
+        echo "=== Checking rating service state ==="
         docker compose ps rating-service
-        echo "=== Rating service logs (detailed) ==="
+        echo "=== Rating service detailed logs ==="
         docker compose logs --tail=50 rating-service || true
-        echo "=== Rating service container info ==="
-        docker inspect rsoi_lab_2-rating-1 || true
+        echo "=== Checking if rating container exists ==="
+        docker ps -a | grep rating || echo "Rating container not found"
+        echo "=== Checking container exit code ==="
+        docker compose logs rating-service 2>&1 | tail -20 || true
 
-    - name: Wait for all microservices
-      run: WAIT_PORTS="8050,8060,8070,8080" ./scripts/wait-script.sh
-
-    - name: Test health endpoints
+    - name: Check database connectivity from rating service
       run: |
-        curl -f http://localhost:8050/manage/health || echo "Rating health check failed"
-        curl -f http://localhost:8060/manage/health || echo "Library health check failed"
-        curl -f http://localhost:8070/manage/health || echo "Reservation health check failed"
-        curl -f http://localhost:8080/manage/health || echo "Gateway health check failed"
+        echo "=== Testing DB connection from rating container ==="
+        docker compose exec -T rating-service /bin/sh -c "nc -z postgres 5432 && echo 'DB port is reachable' || echo 'DB port NOT reachable'" || echo "Cannot exec into rating container"
 
-    - name: Show final service status
+    - name: Inspect rating service container
       if: always()
       run: |
-        echo "=== Final service status ==="
-        docker compose ps
-        echo "=== All service logs ==="
+        echo "=== Inspecting rating container ==="
+        docker inspect rating-service || true
+        echo "=== Checking container exit code ==="
+        docker compose ps rating-service --format json | jq '.[] | {Service: .Service, State: .State, ExitCode: .ExitCode}' || true
+
+    - name: Test rating service manually
+      run: |
+        echo "=== Trying to start rating service manually ==="
+        docker compose run --rm rating-service ./rating || \
+        docker compose run --rm rating-service /bin/sh -c "ls -la && pwd && echo '=== Binary exists? ===' && ls -la rating && echo '=== Trying to run ===' && ./rating" || \
+        echo "Manual start failed"
+
+    - name: Show all service logs
+      if: always()
+      run: |
+        echo "=== ALL SERVICE LOGS ==="
         docker compose logs --tail=100
 
     - name: Cleanup
