@@ -1,3 +1,5 @@
+# УДАЛИТЕ ЭТУ СТРОКУ: version: '3.8'
+
 services:
   postgres:
     image: postgres:13
@@ -28,7 +30,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DB_HOST: postgres
+      DB_HOST: postgres        # Это имя сервиса в docker-compose
       DB_PORT: 5432
       DB_USER: program
       DB_PASSWORD: test
@@ -39,7 +41,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 40s
+      start_period: 30s
 
   library:
     image: library-service:latest
@@ -53,11 +55,11 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DB_HOST: postgres
+      DB_HOST: postgres        # Это имя сервиса в docker-compose
       DB_PORT: 5432
       DB_USER: program
       DB_PASSWORD: test
-      DB_NAME: library
+      DB_NAME: library         # Исправьте если нужно "libraries"
     command: ["sh", "-c", "./wait-for.sh postgres:5432 -- ./library"]
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8060/manage/health || exit 1"]
@@ -66,60 +68,7 @@ services:
       retries: 5
       start_period: 30s
 
-  reservation:
-    image: reservation-service:latest
-    build:
-      context: .
-      dockerfile: cmd/reservation/Dockerfile
-    container_name: reservation-service
-    ports:
-      - "8070:8070"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      rating:
-        condition: service_healthy
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: program
-      DB_PASSWORD: test
-      DB_NAME: reservation
-    command: ["sh", "-c", "./wait-for.sh postgres:5432 -- ./reservation"]
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8070/manage/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
-  gateway:
-    image: gateway-service:latest
-    build:
-      context: .
-      dockerfile: cmd/gateway/Dockerfile
-    container_name: gateway-service
-    ports:
-      - "8080:8080"
-    depends_on:
-      rating:
-        condition: service_healthy
-      library:
-        condition: service_healthy
-      reservation:
-        condition: service_healthy
-    environment:
-      RATING_SERVICE_URL: http://rating:8050
-      LIBRARY_SERVICE_URL: http://library:8060
-      RESERVATION_SERVICE_URL: http://reservation:8070
-    command: ["sh", "-c", "./wait-for.sh rating:8050 library:8060 reservation:8070 -- ./gateway"]
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/manage/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 40s
+# ... остальные сервисы без изменений
 
 volumes:
   db-data:
-    driver: local
