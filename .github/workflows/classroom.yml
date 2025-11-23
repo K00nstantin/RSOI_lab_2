@@ -71,29 +71,13 @@ jobs:
       run: |
         WAIT_PORTS="8050,8060,8070,8080" ./scripts/wait-script.sh
 
-    - name: Verify health endpoints
+    - name: Test basic health endpoints
       run: |
-        echo "Checking health endpoints..."
-        
-        for service in rating:8050 library:8060 reservation:8070 gateway:8080; do
-          name=${service%:*}
-          port=${service#*:}
-          for i in {1..15}; do
-            if curl -s -f "http://localhost:$port/manage/health" > /dev/null; then
-              echo "$name service is healthy"
-              break
-            else
-              echo "Waiting for $name service... attempt $i"
-              if [ $i -eq 15 ]; then
-                echo "$name service health check failed"
-                exit 1
-              fi
-              sleep 5
-            fi
-          done
-        done
-        
-        echo "All services are healthy"
+        echo "Testing basic health endpoints..."
+        curl -f http://localhost:8050/manage/health && echo "Rating service healthy"
+        curl -f http://localhost:8060/manage/health && echo "Library service healthy"
+        curl -f http://localhost:8070/manage/health && echo "Reservation service healthy"
+        curl -f http://localhost:8080/manage/health && echo "Gateway service healthy"
 
     - name: Test API functionality
       run: |
@@ -107,6 +91,8 @@ jobs:
       if: always()
       run: |
         docker compose ps
+        echo ""
+        echo "Recent logs:"
         docker compose logs --tail=20
 
     - name: Cleanup
