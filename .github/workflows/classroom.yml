@@ -25,24 +25,19 @@ jobs:
       uses: docker/setup-buildx-action@v3
 
     - name: Build Rating service
-      run: |
-        docker build -t rating-service:latest -f cmd/rating/Dockerfile .
+      run: docker build -t rating-service:latest -f cmd/rating/Dockerfile .
 
     - name: Build Gateway service
-      run: |
-        docker build -t gateway-service:latest -f cmd/gateway/Dockerfile .
+      run: docker build -t gateway-service:latest -f cmd/gateway/Dockerfile .
 
     - name: Build Library service
-      run: |
-        docker build -t library-service:latest -f cmd/library/Dockerfile .
+      run: docker build -t library-service:latest -f cmd/library/Dockerfile .
 
     - name: Build Reservation service
-      run: |
-        docker build -t reservation-service:latest -f cmd/reservation/Dockerfile .
+      run: docker build -t reservation-service:latest -f cmd/reservation/Dockerfile .
 
     - name: Verify Docker images
-      run: |
-        docker images | grep -E "(gateway|rating|library|reservation)-service"
+      run: docker images | grep -E "(gateway|rating|library|reservation)-service"
 
   health-checks:
     name: Health Checks
@@ -54,22 +49,16 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Make scripts executable
-      run: |
-        chmod +x scripts/wait-for.sh
-        chmod +x scripts/wait-script.sh
+      run: chmod +x scripts/wait-for.sh scripts/wait-script.sh
 
     - name: Start services with Docker Compose
-      run: |
-        docker compose up -d --build
+      run: docker compose up -d --build
 
     - name: Wait for PostgreSQL
-      run: |
-        ./scripts/wait-for.sh -t 60 "postgres:5432" -- echo "PostgreSQL is ready"
-        sleep 15
+      run: ./scripts/wait-for.sh -t 60 "postgres:5432" -- echo "PostgreSQL is ready"
 
     - name: Wait for all microservices
-      run: |
-        WAIT_PORTS="8050,8060,8070,8080" ./scripts/wait-script.sh
+      run: WAIT_PORTS="8050,8060,8070,8080" ./scripts/wait-script.sh
 
     - name: Test health endpoints
       run: |
@@ -77,7 +66,6 @@ jobs:
         curl -f http://localhost:8060/manage/health
         curl -f http://localhost:8070/manage/health
         curl -f http://localhost:8080/manage/health
-        echo "All health endpoints are working"
 
     - name: Test API functionality
       run: |
@@ -85,12 +73,10 @@ jobs:
         curl -f "http://localhost:8060/api/v1/libraries?city=Moscow"
         curl -f "http://localhost:8080/api/v1/rating" -H "X-User-Name: testuser"
         curl -f "http://localhost:8070/api/v1/reservations" -H "X-User-Name: testuser"
-        echo "All API endpoints are working"
 
     - name: Show service status
       if: always()
-      run: |
-        docker compose ps
+      run: docker compose ps
 
     - name: Cleanup
       if: always()
