@@ -150,7 +150,6 @@ build-iPhoneSimulator/
 # you should judge for yourself, the pros and cons are mentioned at:
 # https://guides.cocoapods.org/using/using-cocoapods.html#should-i-check-the-pods-directory-into-source-control
 #
-# vendor/Pods/
 
 ## Documentation cache and generated files:
 /.yardoc/
@@ -160,7 +159,6 @@ build-iPhoneSimulator/
 
 ## Environment normalization:
 /.bundle/
-/vendor/bundle
 /lib/bundler/man/
 
 # for a library or gem, you might want to ignore these files since the code is
@@ -195,7 +193,6 @@ build-iPhoneSimulator/
 *.dll
 
 # Fortran module files
-*.mod
 *.smod
 
 # Compiled Static libraries
@@ -356,7 +353,6 @@ local.properties
 *.pdb
 
 # Kernel Module Compile Results
-*.mod*
 *.cmd
 .tmp_versions/
 modules.order
@@ -524,7 +520,6 @@ _deps
 # Output of the go coverage tool, specifically when used with LiteIDE
 
 # Dependency directories (remove the comment below to include it)
-# vendor/
 
 ### Qt template
 # C++ objects and libs
@@ -588,10 +583,6 @@ DerivedData/
 *.moved-aside
 *.pbxuser
 !default.pbxuser
-*.mode1v3
-!default.mode1v3
-*.mode2v3
-!default.mode2v3
 *.perspectivev3
 !default.perspectivev3
 
@@ -636,7 +627,6 @@ config/master.key
 # unless supporting rvm < 1.11.0 or doing something fancy, ignore this:
 
 # if using bower-rails ignore default bower_components path bower.json files
-/vendor/assets/bower_components
 *.bowerrc
 bower.json
 
@@ -1201,7 +1191,6 @@ pyvenv.cfg
 pip-selfcheck.json
 
 ### Laravel template
-/vendor/
 npm-debug.log
 yarn-error.log
 
