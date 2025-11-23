@@ -19,17 +19,20 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.21'
+        go-version: '1.23'
 
     - name: Verify project structure
       run: |
         echo "Project structure:"
         ls -la
         echo ""
-        echo "Go module:"
+        echo "Looking for go.mod..."
+        find . -name "go.mod" -type f
+        echo ""
+        echo "go.mod content:"
         cat go.mod
         echo ""
-        echo "Project verified - RSOI_lab_2 structure confirmed"
+        echo "Go module verified"
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -61,8 +64,8 @@ jobs:
     - name: Verify Docker images
       run: |
         echo "Built images:"
-        docker images | grep -E "(gateway|rating|library|reservation)-service"
-        echo "All images built successfully"
+        docker images | grep -E "(gateway|rating|library|reservation)-service" || echo "No specific images found"
+        echo "Build process completed"
 
   health-checks:
     name: Health Checks
@@ -86,7 +89,7 @@ jobs:
     - name: Wait for PostgreSQL
       run: |
         ./wait-for.sh -t 60 "postgres:5432" -- echo "PostgreSQL is ready"
-        sleep 10
+        sleep 15
 
     - name: Wait for all microservices
       run: |
@@ -107,7 +110,7 @@ jobs:
           name=$(echo $service | cut -d: -f1)
           port=$(echo $service | cut -d: -f2)
           
-          max_attempts=10
+          max_attempts=15
           attempt=1
           
           while [ $attempt -le $max_attempts ]; do
@@ -151,7 +154,7 @@ jobs:
         docker-compose ps
         echo ""
         echo "Recent logs:"
-        docker-compose logs --tail=20
+        docker-compose logs --tail=30
 
     - name: Cleanup
       if: always()

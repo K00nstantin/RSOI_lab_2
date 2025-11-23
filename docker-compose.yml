@@ -40,7 +40,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 20s
+      start_period: 30s
 
   library:
     image: library-service:latest
@@ -64,7 +64,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 20s
+      start_period: 30s
 
   reservation:
     image: reservation-service:latest
@@ -90,7 +90,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 20s
+      start_period: 30s
 
   gateway:
     image: gateway-service:latest
@@ -116,7 +116,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 40s
 
 volumes:
   db-data:

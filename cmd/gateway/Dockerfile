@@ -1,4 +1,4 @@
-FROM golang:1.21-alpine AS builder
+FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
@@ -9,7 +9,7 @@ RUN go mod download
 # Затем копируем весь исходный код
 COPY . .
 
-# Собираем приложение (учитываем структуру папки RSOI_lab_2)
+# Собираем приложение
 RUN go build -o gateway ./cmd/gateway/main.go
 
 FROM alpine:latest
