@@ -1,35 +1,64 @@
+version: '3.8'
+
 services:
   postgres:
     image: postgres:13
-    # ... остальная конфигурация без изменений
+    environment:
+      POSTGRES_USER: program
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: ratings
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U program -d ratings"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - db-data:/var/lib/postgresql/data
 
   rating:
     build:
-      context: .  # Контекст - корень проекта
+      context: .
       dockerfile: cmd/rating/Dockerfile
     container_name: rating-service
     ports:
       - "8050:8050"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USER: program
       DB_PASSWORD: test
       DB_NAME: ratings
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8050/manage/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   gateway:
     build:
-      context: .  # Контекст - корень проекта
+      context: .
       dockerfile: cmd/gateway/Dockerfile
     container_name: gateway-service
     ports:
       - "8080:8080"
     depends_on:
-      - rating
+      rating:
+        condition: service_healthy
     environment:
       RATING_SERVICE_URL: http://rating:8050
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/manage/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
 volumes:
   db-data:
