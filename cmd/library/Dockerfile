@@ -13,7 +13,7 @@ RUN apk --no-cache add ca-certificates wget
 
 WORKDIR /root/
 COPY --from=builder /app/library .
-COPY wait-for.sh .
+COPY scripts/wait-for.sh .
 
 EXPOSE 8060
 CMD ["./library"]

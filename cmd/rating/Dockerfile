@@ -13,7 +13,7 @@ RUN apk --no-cache add ca-certificates wget
 
 WORKDIR /root/
 COPY --from=builder /app/rating .
-COPY wait-for.sh .
+COPY scripts/wait-for.sh .
 
 EXPOSE 8050
 CMD ["./rating"]
