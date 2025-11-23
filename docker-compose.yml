@@ -1,5 +1,3 @@
-# УДАЛИТЕ ЭТУ СТРОКУ: version: '3.8'
-
 services:
   postgres:
     image: postgres:13
@@ -30,7 +28,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DB_HOST: postgres        # Это имя сервиса в docker-compose
+      DB_HOST: postgres
       DB_PORT: 5432
       DB_USER: program
       DB_PASSWORD: test
@@ -41,34 +39,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 40s
 
-  library:
-    image: library-service:latest
-    build:
-      context: .
-      dockerfile: cmd/library/Dockerfile
-    container_name: library-service
-    ports:
-      - "8060:8060"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DB_HOST: postgres        # Это имя сервиса в docker-compose
-      DB_PORT: 5432
-      DB_USER: program
-      DB_PASSWORD: test
-      DB_NAME: library         # Исправьте если нужно "libraries"
-    command: ["sh", "-c", "./wait-for.sh postgres:5432 -- ./library"]
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8060/manage/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
-# ... остальные сервисы без изменений
-
-volumes:
-  db-data:
+  # ... остальные сервисы
