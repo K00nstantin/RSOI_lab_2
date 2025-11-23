@@ -71,29 +71,26 @@ jobs:
       run: |
         WAIT_PORTS="8050,8060,8070,8080" ./scripts/wait-script.sh
 
-    - name: Test basic health endpoints
+    - name: Test health endpoints
       run: |
-        echo "Testing basic health endpoints..."
-        curl -f http://localhost:8050/manage/health && echo "Rating service healthy"
-        curl -f http://localhost:8060/manage/health && echo "Library service healthy"
-        curl -f http://localhost:8070/manage/health && echo "Reservation service healthy"
-        curl -f http://localhost:8080/manage/health && echo "Gateway service healthy"
+        curl -f http://localhost:8050/manage/health
+        curl -f http://localhost:8060/manage/health
+        curl -f http://localhost:8070/manage/health
+        curl -f http://localhost:8080/manage/health
+        echo "All health endpoints are working"
 
     - name: Test API functionality
       run: |
-        echo "Testing API endpoints..."
-        curl -f "http://localhost:8050/api/v1/rating?username=testuser" && echo "Rating API works"
-        curl -f "http://localhost:8060/api/v1/libraries?city=Moscow" && echo "Library API works"
-        curl -f "http://localhost:8080/api/v1/rating" -H "X-User-Name: testuser" && echo "Gateway API works"
-        curl -f "http://localhost:8070/api/v1/reservations" -H "X-User-Name: testuser" && echo "Reservation API works"
+        curl -f "http://localhost:8050/api/v1/rating?username=testuser"
+        curl -f "http://localhost:8060/api/v1/libraries?city=Moscow"
+        curl -f "http://localhost:8080/api/v1/rating" -H "X-User-Name: testuser"
+        curl -f "http://localhost:8070/api/v1/reservations" -H "X-User-Name: testuser"
+        echo "All API endpoints are working"
 
     - name: Show service status
       if: always()
       run: |
         docker compose ps
-        echo ""
-        echo "Recent logs:"
-        docker compose logs --tail=20
 
     - name: Cleanup
       if: always()
