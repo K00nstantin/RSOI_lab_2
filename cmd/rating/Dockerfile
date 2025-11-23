@@ -1,13 +1,19 @@
-FROM golang:1.21-alpine
+FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
 
-# Копируем весь проект
-COPY . .
-
+COPY go.mod go.sum ./
 RUN go mod download
-RUN go build -o rating cmd/rating/main.go
+
+COPY . .
+RUN go build -o rating ./cmd/rating/main.go
+
+FROM alpine:latest
+RUN apk --no-cache add ca-certificates wget
+
+WORKDIR /root/
+COPY --from=builder /app/rating .
+COPY wait-for.sh .
 
 EXPOSE 8050
-
 CMD ["./rating"]
