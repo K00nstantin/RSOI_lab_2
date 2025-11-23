@@ -1,4 +1,4 @@
-name: Docker Build and HealthCheck
+name: CI Pipeline
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 jobs:
-  build-docker-images:
+  build:
     name: Build Docker Images
     runs-on: ubuntu-latest
     
@@ -18,89 +18,48 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Build Rating service
+    - name: Build services
       run: |
         docker build -t rating-service:latest -f cmd/rating/Dockerfile .
-
-    - name: Build Gateway service
-      run: |
         docker build -t gateway-service:latest -f cmd/gateway/Dockerfile .
 
-    - name: Save Docker images
+    - name: Test Docker images
       run: |
-        docker save rating-service:latest -o rating-image.tar
-        docker save gateway-service:latest -o gateway-image.tar
+        echo "Testing Docker images..."
+        docker images
 
-    - name: Upload Docker images
-      uses: actions/upload-artifact@v4
-      with:
-        name: docker-images
-        path: |
-          rating-image.tar
-          gateway-image.tar
-        retention-days: 1
-
-  test-healthchecks:
-    name: Test Health Checks
+  healthcheck:
+    name: Health Check Tests
     runs-on: ubuntu-latest
-    needs: build-docker-images
+    needs: build
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Download Docker images
-      uses: actions/download-artifact@v4
-      with:
-        name: docker-images
-
-    - name: Load Docker images
+    - name: Start services
       run: |
-        docker load -i rating-image.tar
-        docker load -i gateway-image.tar
+        docker-compose up -d
+        sleep 10
 
-    - name: Make scripts executable
+    - name: Check running containers
+      run: |
+        docker-compose ps
+        docker ps -a
+
+    - name: Wait for services
       run: |
         chmod +x wait-for.sh
         chmod +x wait-script.sh
-
-    - name: Start services with Docker Compose
-      run: |
-        docker-compose up -d
-
-    - name: Wait for services to be healthy
-      run: |
-        # Даем время PostgreSQL запуститься сначала
-        ./wait-for.sh -t 60 "postgres:5432" -- echo "PostgreSQL is ready"
-        
-        # Ждем готовности сервисов через ваш скрипт
+        ./wait-for.sh -t 30 postgres:5432 -- echo "PostgreSQL is ready"
         WAIT_PORTS="8050,8080" ./wait-script.sh
 
-    - name: Verify services are running
+    - name: Verify health endpoints
       run: |
-        echo "=== Checking running containers ==="
-        docker-compose ps
-        
-        echo "=== Checking service health ==="
         curl -f http://localhost:8050/manage/health || exit 1
-        echo " ✓ Rating service health check passed"
-        
         curl -f http://localhost:8080/manage/health || exit 1
-        echo " ✓ Gateway service health check passed"
+        echo "All health checks passed!"
 
-    - name: Test API endpoints
-      run: |
-        echo "=== Testing API endpoints ==="
-        
-        # Test rating service
-        curl -f "http://localhost:8050/api/v1/rating?username=testuser" || echo "Rating API test passed"
-        
-        # Test gateway service
-        curl -f "http://localhost:8080/api/v1/rating" -H "X-User-Name: testuser" || echo "Gateway API test passed"
-        
-        echo "All API tests completed"
-
-    - name: Stop services
+    - name: Cleanup
       if: always()
-      run: |
-        docker-compose down
+      run: docker-compose down
