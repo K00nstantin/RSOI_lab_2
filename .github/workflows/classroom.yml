@@ -34,7 +34,7 @@ jobs:
     - name: Verify Docker images
       run: docker images
 
-  health-checks:
+health-checks:
   name: Health Checks
   runs-on: ubuntu-latest
   needs: build-images
