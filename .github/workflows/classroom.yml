@@ -1,25 +1,138 @@
-name: Classroom CI
+name: Docker Build and Health Checks
 
 on:
   push:
-    branches: [ main, develop, master ]
+    branches: [ main, develop ]
   pull_request:
-    branches: [ main, develop, master ]
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
-  classroom-tests:
+  build-images:
+    name: Build Docker Images
     runs-on: ubuntu-latest
     
+    strategy:
+      matrix:
+        service: [gateway, rating, library, reservation]
+    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build ${{ matrix.service }} image
+      run: |
+        docker build \
+          -t ${{ matrix.service }}-service:latest \
+          -f cmd/${{ matrix.service }}/Dockerfile .
         
-      - name: Debug info
-        run: |
-          echo "Classroom workflow is running!"
-          echo "Event: ${{ github.event_name }}"
-          echo "Branch: ${{ github.ref }}"
+    - name: Save ${{ matrix.service }} image
+      run: |
+        docker save ${{ matrix.service }}-service:latest -o ${{ matrix.service }}-image.tar
+        
+    - name: Upload ${{ matrix.service }} image
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.service }}-image
+        path: ${{ matrix.service }}-image.tar
+        retention-days: 1
+
+  health-checks:
+    name: Health Checks
+    runs-on: ubuntu-latest
+    needs: build-images
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download Docker images
+      run: |
+        for service in gateway rating library reservation; do
+          gh run download -n "$service-image" || echo "Downloading $service image"
+        done
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Load Docker images
+      run: |
+        for service in gateway rating library reservation; do
+          docker load -i $service-image.tar && echo "Loaded $service image" || echo "Failed to load $service image"
+        done
+
+    - name: Make scripts executable
+      run: |
+        chmod +x wait-for.sh
+        chmod +x wait-script.sh
+
+    - name: Start services with Docker Compose
+      run: |
+        docker-compose up -d
+        echo "Services starting..."
+
+    - name: Wait for PostgreSQL
+      run: |
+        ./wait-for.sh -t 60 "postgres:5432" -- echo "PostgreSQL is ready"
+
+    - name: Wait for all microservices
+      run: |
+        WAIT_PORTS="8050,8060,8070,8080" ./wait-script.sh
+
+    - name: Verify health endpoints
+      run: |
+        echo "Checking health endpoints..."
+        
+        services=(
+          "rating:8050"
+          "library:8060" 
+          "reservation:8070"
+          "gateway:8080"
+        )
+        
+        for service in "${services[@]}"; do
+          name=$(echo $service | cut -d: -f1)
+          port=$(echo $service | cut -d: -f2)
           
-      - name: List all workflow files
-        run: find .github/workflows -name "*.yml" -o -name "*.yaml"
+          if curl -s -f "http://localhost:$port/manage/health" > /dev/null; then
+            echo "$name service is healthy"
+          else
+            echo "$name service health check failed"
+            exit 1
+          fi
+        done
+        
+        echo "All services are healthy!"
+
+    - name: Test API functionality
+      run: |
+        echo "Testing API endpoints..."
+        
+        # Test Rating service directly
+        curl -f "http://localhost:8050/api/v1/rating?username=testuser" && echo "Rating API works"
+        
+        # Test Library service directly  
+        curl -f "http://localhost:8060/api/v1/libraries?city=Москва" && echo "Library API works"
+        
+        # Test Gateway service
+        curl -f "http://localhost:8080/api/v1/rating" -H "X-User-Name: testuser" && echo "Gateway API works"
+        
+        # Test Reservation service
+        curl -f "http://localhost:8070/api/v1/reservations" -H "X-User-Name: testuser" && echo "Reservation API works"
+
+    - name: Show service status
+      if: always()
+      run: |
+        echo "Final service status:"
+        docker-compose ps
+        echo ""
+        echo "Recent logs:"
+        docker-compose logs --tail=20
+
+    - name: Cleanup
+      if: always()
+      run: |
+        docker-compose down
+        echo "Cleanup completed"
