@@ -1,122 +1,126 @@
-version: '3.8'
+name: Docker Build and Health Checks
 
-services:
-  postgres:
-    image: postgres:13
-    environment:
-      POSTGRES_USER: program
-      POSTGRES_PASSWORD: test
-      POSTGRES_DB: ratings
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U program -d ratings"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    volumes:
-      - db-data:/var/lib/postgresql/data
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
 
-  rating:
-    image: rating-service:latest
-    build:
-      context: .
-      dockerfile: cmd/rating/Dockerfile
-    container_name: rating-service
-    ports:
-      - "8050:8050"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: program
-      DB_PASSWORD: test
-      DB_NAME: ratings
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8050/manage/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
+jobs:
+  build-images:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-  library:
-    image: library-service:latest
-    build:
-      context: .
-      dockerfile: cmd/library/Dockerfile
-    container_name: library-service
-    ports:
-      - "8060:8060"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: program
-      DB_PASSWORD: test
-      DB_NAME: library
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8060/manage/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23'
 
-  reservation:
-    image: reservation-service:latest
-    build:
-      context: .
-      dockerfile: cmd/reservation/Dockerfile
-    container_name: reservation-service
-    ports:
-      - "8070:8070"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      rating:
-        condition: service_healthy
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: program
-      DB_PASSWORD: test
-      DB_NAME: reservation
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8070/manage/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
 
-  gateway:
-    image: gateway-service:latest
-    build:
-      context: .
-      dockerfile: cmd/gateway/Dockerfile
-    container_name: gateway-service
-    ports:
-      - "8080:8080"
-    depends_on:
-      rating:
-        condition: service_healthy
-      library:
-        condition: service_healthy
-      reservation:
-        condition: service_healthy
-    environment:
-      RATING_SERVICE_URL: http://rating:8050
-      LIBRARY_SERVICE_URL: http://library:8060
-      RESERVATION_SERVICE_URL: http://reservation:8070
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/manage/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 40s
+    - name: Install Docker Compose
+      run: |
+        sudo curl -L "https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+        sudo chmod +x /usr/local/bin/docker-compose
+        docker-compose --version
 
-volumes:
-  db-data:
+    - name: Build Rating service
+      run: |
+        docker build -t rating-service:latest -f cmd/rating/Dockerfile .
+
+    - name: Build Gateway service
+      run: |
+        docker build -t gateway-service:latest -f cmd/gateway/Dockerfile .
+
+    - name: Build Library service
+      run: |
+        docker build -t library-service:latest -f cmd/library/Dockerfile .
+
+    - name: Build Reservation service
+      run: |
+        docker build -t reservation-service:latest -f cmd/reservation/Dockerfile .
+
+    - name: Verify Docker images
+      run: |
+        docker images | grep -E "(gateway|rating|library|reservation)-service"
+
+  health-checks:
+    name: Health Checks
+    runs-on: ubuntu-latest
+    needs: build-images
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Docker Compose
+      run: |
+        sudo curl -L "https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+        sudo chmod +x /usr/local/bin/docker-compose
+        docker-compose --version
+
+    - name: Make scripts executable
+      run: |
+        chmod +x scripts/wait-for.sh
+        chmod +x scripts/wait-script.sh
+
+    - name: Start services with Docker Compose
+      run: |
+        docker-compose up -d --build
+
+    - name: Wait for PostgreSQL
+      run: |
+        ./scripts/wait-for.sh -t 60 "postgres:5432" -- echo "PostgreSQL is ready"
+        sleep 15
+
+    - name: Wait for all microservices
+      run: |
+        WAIT_PORTS="8050,8060,8070,8080" ./scripts/wait-script.sh
+
+    - name: Verify health endpoints
+      run: |
+        echo "Checking health endpoints..."
+        
+        for service in rating:8050 library:8060 reservation:8070 gateway:8080; do
+          name=${service%:*}
+          port=${service#*:}
+          for i in {1..15}; do
+            if curl -s -f "http://localhost:$port/manage/health" > /dev/null; then
+              echo "$name service is healthy"
+              break
+            else
+              echo "Waiting for $name service... attempt $i"
+              if [ $i -eq 15 ]; then
+                echo "$name service health check failed"
+                exit 1
+              fi
+              sleep 5
+            fi
+          done
+        done
+        
+        echo "All services are healthy"
+
+    - name: Test API functionality
+      run: |
+        echo "Testing API endpoints..."
+        curl -f "http://localhost:8050/api/v1/rating?username=testuser" && echo "Rating API works"
+        curl -f "http://localhost:8060/api/v1/libraries?city=Moscow" && echo "Library API works"
+        curl -f "http://localhost:8080/api/v1/rating" -H "X-User-Name: testuser" && echo "Gateway API works"
+        curl -f "http://localhost:8070/api/v1/reservations" -H "X-User-Name: testuser" && echo "Reservation API works"
+
+    - name: Show service status
+      if: always()
+      run: |
+        docker-compose ps
+        docker-compose logs --tail=20
+
+    - name: Cleanup
+      if: always()
+      run: docker-compose down
