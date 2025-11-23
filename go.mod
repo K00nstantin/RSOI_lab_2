@@ -44,5 +44,5 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 // Добавьте эти строки в самый конец go.mod
-replace RSOI_lab_2/pkg/database => ./pkg/database
-replace RSOI_lab_2/pkg/models => ./pkg/models
+replace RSOI_lab_2/pkg/database => ../pkg/database
+replace RSOI_lab_2/pkg/models => ../pkg/models
