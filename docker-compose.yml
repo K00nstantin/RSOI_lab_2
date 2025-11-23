@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_USER: program
       POSTGRES_PASSWORD: test
-      POSTGRES_DB: ratings
+      POSTGRES_DB: postgres
     ports:
       - "5432:5432"
     healthcheck:
@@ -34,7 +34,7 @@ services:
       DB_PORT: 5432
       DB_USER: program
       DB_PASSWORD: test
-      DB_NAME: rating-service
+      DB_NAME: ratings
     command: ["sh", "-c", "./wait-for.sh postgres:5432 -- ./rating"]
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8050/manage/health || exit 1"]
@@ -59,7 +59,7 @@ services:
       DB_PORT: 5432
       DB_USER: program
       DB_PASSWORD: test
-      DB_NAME: library-service         # Исправьте если нужно "libraries"
+      DB_NAME: libraries        # Исправьте если нужно "libraries"
     command: ["sh", "-c", "./wait-for.sh postgres:5432 -- ./library"]
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8060/manage/health || exit 1"]
