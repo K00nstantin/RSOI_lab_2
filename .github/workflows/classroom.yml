@@ -72,7 +72,7 @@ jobs:
         echo "=== Immediate service status after startup ==="
         docker compose ps
         echo "=== Rating service logs (first check) ==="
-        docker compose logs rating-service || true
+        docker compose logs rating || true
         sleep 5
 
     - name: Wait for PostgreSQL
@@ -86,7 +86,7 @@ jobs:
         echo "=== Monitoring rating service startup ==="
         for i in {1..10}; do
           echo "Check $i:"
-          CONTAINER_STATUS=$(docker compose ps rating-service --format json | jq -r '.[].State' 2>/dev/null || echo "unknown")
+          CONTAINER_STATUS=$(docker compose ps rating --format json | jq -r '.[].State' 2>/dev/null || echo "unknown")
           echo "Container state: $CONTAINER_STATUS"
           
           if [ "$CONTAINER_STATUS" = "running" ]; then
@@ -94,7 +94,7 @@ jobs:
             break
           elif [ "$CONTAINER_STATUS" = "exited" ]; then
             echo "Rating service has exited"
-            docker compose logs rating-service --tail=20
+            docker compose logs rating --tail=20
             break
           fi
           
@@ -105,9 +105,9 @@ jobs:
     - name: Check rating service details
       run: |
         echo "=== Rating service detailed status ==="
-        docker compose ps rating-service
+        docker compose ps rating
         echo "=== Rating service recent logs ==="
-        docker compose logs --tail=30 rating-service || true
+        docker compose logs --tail=30 rating || true
         echo "=== Container inspection ==="
         docker inspect rating-service 2>/dev/null | jq '.[] | {State: .State, ExitCode: .State.ExitCode, Error: .State.Error}' || echo "Cannot inspect rating container"
 
@@ -121,17 +121,17 @@ jobs:
         docker compose exec -T postgres psql -U program -d ratings -c "SELECT version();" && echo "PostgreSQL is responsive" || echo "PostgreSQL not responsive"
         
         echo "From rating container (if running):"
-        docker compose exec -T rating-service nc -z postgres 5432 && echo "Rating can reach PostgreSQL" || echo "Rating cannot reach PostgreSQL (container may be stopped)"
+        docker compose exec -T rating nc -z postgres 5432 && echo "Rating can reach PostgreSQL" || echo "Rating cannot reach PostgreSQL (container may be stopped)"
 
     - name: Manual rating service test
       run: |
         echo "=== Trying to run rating service manually ==="
         set +e
         echo "1. Checking files in rating container:"
-        docker compose run --rm rating-service ls -la || echo "Cannot run container"
+        docker compose run --rm rating ls -la || echo "Cannot run container"
         
         echo "2. Testing binary execution:"
-        docker compose run --rm rating-service ./rating &
+        docker compose run --rm rating ./rating &
         MANUAL_PID=$!
         sleep 5
         if ps -p $MANUAL_PID > /dev/null; then
@@ -169,7 +169,7 @@ jobs:
         echo "=== FINAL SERVICE STATUS ==="
         docker compose ps -a
         echo "=== RATING SERVICE FULL LOGS ==="
-        docker compose logs rating-service || true
+        docker compose logs rating || true
 
     - name: Cleanup
       if: always()
