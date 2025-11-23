@@ -1,30 +1,86 @@
 package main
 
 import (
-	"RSOI_lab_2/pkg/database"
 	"RSOI_lab_2/pkg/models"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 var db *gorm.DB
 
 func main() {
-	db = database.InitRatingDB()
+	log.Println("Starting rating service...")
+
+	// Конфигурация подключения к базе данных
+	host := getEnv("DB_HOST", "postgres") // Имя сервиса в docker-compose
+	port := getEnv("DB_PORT", "5432")
+	user := getEnv("DB_USER", "program")
+	password := getEnv("DB_PASSWORD", "test")
+	dbname := getEnv("DB_NAME", "ratings")
+
+	// Формируем строку подключения
+	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=UTC",
+		host, user, password, dbname, port)
+
+	log.Printf("Connecting to database: %s@%s:%s/%s", user, host, port, dbname)
+
+	// Подключение к базе данных с повторными попытками
+	var err error
+	maxRetries := 10
+	for i := 0; i < maxRetries; i++ {
+		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+		if err == nil {
+			break
+		}
+		log.Printf("Database connection attempt %d/%d failed: %v", i+1, maxRetries, err)
+		if i < maxRetries-1 {
+			time.Sleep(5 * time.Second)
+		}
+	}
+
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+
+	// Автоматическое создание таблиц используя модели из pkg/models
+	err = db.AutoMigrate(&models.Rating{})
+	if err != nil {
+		log.Fatalf("Database migration failed: %v", err)
+	}
+
+	log.Println("Database connected successfully")
+
+	// Проверка подключения к базе данных
+	sqlDB, err := db.DB()
+	if err != nil {
+		log.Fatalf("Failed to get database instance: %v", err)
+	}
+
+	if err := sqlDB.Ping(); err != nil {
+		log.Fatalf("Database ping failed: %v", err)
+	}
+
+	log.Println("Database ping successful")
 
 	seedTestData()
 
+	// Настройка HTTP сервера с Gin
 	server := gin.Default()
+	server.GET("/api/v1/rating", getRating)
+	server.PUT("/api/v1/rating", updateRating)
+	server.GET("/manage/health", healthCheck)
 
-	server.GET("/api/rating", getRating)
-	server.PUT("/api/rating", updateRating)
-	server.GET("/manage/health", healthcheck)
-
-	log.Println("Rating service starting on port 8050")
-	server.Run(":8050")
+	log.Println("Rating service starting on :8050")
+	if err := server.Run(":8050"); err != nil {
+		log.Fatalf("Server failed: %v", err)
+	}
 }
 
 func getRating(c *gin.Context) {
@@ -36,6 +92,7 @@ func getRating(c *gin.Context) {
 
 	var rating models.Rating
 	if err := db.Where("username = ?", username).First(&rating).Error; err != nil {
+		// Создаем нового пользователя с рейтингом по умолчанию
 		newRating := models.Rating{
 			Username: username,
 			Stars:    1,
@@ -59,6 +116,7 @@ func updateRating(c *gin.Context) {
 		return
 	}
 
+	// Валидация рейтинга
 	if request.Stars < 1 {
 		request.Stars = 1
 	} else if request.Stars > 100 {
@@ -69,9 +127,11 @@ func updateRating(c *gin.Context) {
 	result := db.Where("username = ?", request.Username).First(&rating)
 
 	if result.Error == nil {
+		// Обновляем существующего пользователя
 		rating.Stars = request.Stars
 		db.Save(&rating)
 	} else {
+		// Создаем нового пользователя
 		rating = models.Rating{
 			Username: request.Username,
 			Stars:    request.Stars,
@@ -90,12 +150,16 @@ func seedTestData() {
 	}
 
 	for _, user := range testUsers {
-		db.FirstOrCreate(&user, models.Rating{Username: user.Username})
+		var existing models.Rating
+		if err := db.Where("username = ?", user.Username).First(&existing).Error; err != nil {
+			// Создаем пользователя только если он не существует
+			db.Create(&user)
+		}
 	}
 	log.Println("Test data seeded")
 }
 
-func healthcheck(ctx *gin.Context) {
+func healthCheck(ctx *gin.Context) {
 	sqlDB, err := db.DB()
 	if err != nil {
 		ctx.JSON(http.StatusServiceUnavailable, gin.H{
@@ -117,4 +181,12 @@ func healthcheck(ctx *gin.Context) {
 		"status":  "UP",
 		"details": "Host localhost:8050 is active",
 	})
+}
+
+func getEnv(key, defaultValue string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	return value
 }

@@ -1,24 +1,120 @@
 package main
 
 import (
-	"RSOI_lab_2/pkg/database"
+	"RSOI_lab_2/pkg/models"
+	"fmt"
+	"log"
 	"net/http"
+	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 var db *gorm.DB
 
 func main() {
-	db = database.InitRatingDB()
-	server := gin.Default()
+	log.Println("Starting reservation service...")
 
-	server.GET("/manage/health", healthcheck)
-	server.Run(":8070")
+	// Конфигурация подключения к базе данных
+	host := getEnv("DB_HOST", "postgres")
+	port := getEnv("DB_PORT", "5432")
+	user := getEnv("DB_USER", "program")
+	password := getEnv("DB_PASSWORD", "test")
+	dbname := getEnv("DB_NAME", "reservation")
+
+	// Формируем строку подключения
+	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=UTC",
+		host, user, password, dbname, port)
+
+	log.Printf("Connecting to database: %s@%s:%s/%s", user, host, port, dbname)
+
+	// Подключение к базе данных с повторными попытками
+	var err error
+	maxRetries := 10
+	for i := 0; i < maxRetries; i++ {
+		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+		if err == nil {
+			break
+		}
+		log.Printf("Database connection attempt %d/%d failed: %v", i+1, maxRetries, err)
+		if i < maxRetries-1 {
+			time.Sleep(5 * time.Second)
+		}
+	}
+
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+
+	// Автоматическое создание таблиц используя модели из pkg/models
+	err = db.AutoMigrate(&models.Reservation{})
+	if err != nil {
+		log.Fatalf("Database migration failed: %v", err)
+	}
+
+	log.Println("Database connected successfully")
+
+	// Проверка подключения к базе данных
+	sqlDB, err := db.DB()
+	if err != nil {
+		log.Fatalf("Failed to get database instance: %v", err)
+	}
+
+	if err := sqlDB.Ping(); err != nil {
+		log.Fatalf("Database ping failed: %v", err)
+	}
+
+	log.Println("Database ping successful")
+
+	seedTestData()
+
+	// Настройка HTTP сервера с Gin
+	server := gin.Default()
+	server.GET("/api/v1/reservations", getReservations)
+	server.GET("/manage/health", healthCheck)
+
+	log.Println("Reservation service starting on :8070")
+	if err := server.Run(":8070"); err != nil {
+		log.Fatalf("Server failed: %v", err)
+	}
 }
 
-func healthcheck(ctx *gin.Context) {
+func getReservations(c *gin.Context) {
+	username := c.GetHeader("X-User-Name")
+	if username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "X-User-Name header is required"})
+		return
+	}
+
+	var reservations []models.Reservation
+	if err := db.Where("username = ?", username).Find(&reservations).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, reservations)
+}
+
+func seedTestData() {
+	// Заполнение тестовыми данными
+	reservations := []models.Reservation{
+		{Username: "alice", BookUID: "book1", LibraryUID: "lib1", Status: "active"},
+		{Username: "bob", BookUID: "book2", LibraryUID: "lib2", Status: "completed"},
+	}
+
+	for _, res := range reservations {
+		var existing models.Reservation
+		if err := db.Where("username = ? AND book_uid = ?", res.Username, res.BookUID).First(&existing).Error; err != nil {
+			db.Create(&res)
+		}
+	}
+	log.Println("Reservation test data seeded")
+}
+
+func healthCheck(ctx *gin.Context) {
 	sqlDB, err := db.DB()
 	if err != nil {
 		ctx.JSON(http.StatusServiceUnavailable, gin.H{
@@ -31,7 +127,7 @@ func healthcheck(ctx *gin.Context) {
 	if err := sqlDB.Ping(); err != nil {
 		ctx.JSON(http.StatusServiceUnavailable, gin.H{
 			"status":  "DOWN",
-			"details": "Database connection failed",
+			"details": "Database ping failed",
 			"error":   err.Error(),
 		})
 		return
@@ -40,4 +136,12 @@ func healthcheck(ctx *gin.Context) {
 		"status":  "UP",
 		"details": "Host localhost:8070 is active",
 	})
+}
+
+func getEnv(key, defaultValue string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	return value
 }
