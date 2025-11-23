@@ -136,7 +136,7 @@ func healthCheck(ctx *gin.Context) {
 	}
 	ctx.JSON(http.StatusOK, gin.H{
 		"status":  "UP",
-		"details": "Host localhost:8060 is active",
+		"details": "Library service is healthy",
 	})
 }
 

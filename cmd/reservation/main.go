@@ -99,15 +99,30 @@ func getReservations(c *gin.Context) {
 }
 
 func seedTestData() {
-	// Заполнение тестовыми данными
+	// Заполнение тестовыми данными - ИСПРАВЛЕНО: BookUid и LibraryUid (с маленькой d)
 	reservations := []models.Reservation{
-		{Username: "alice", BookUID: "book1", LibraryUID: "lib1", Status: "active"},
-		{Username: "bob", BookUID: "book2", LibraryUID: "lib2", Status: "completed"},
+		{
+			Username:   "alice",
+			BookUid:    "book1",
+			LibraryUid: "lib1",
+			Status:     "active",
+			StartDate:  time.Now(),
+			TillDate:   time.Now().AddDate(0, 0, 7),
+		},
+		{
+			Username:   "bob",
+			BookUid:    "book2",
+			LibraryUid: "lib2",
+			Status:     "completed",
+			StartDate:  time.Now().AddDate(0, 0, -7),
+			TillDate:   time.Now().AddDate(0, 0, -1),
+		},
 	}
 
 	for _, res := range reservations {
 		var existing models.Reservation
-		if err := db.Where("username = ? AND book_uid = ?", res.Username, res.BookUID).First(&existing).Error; err != nil {
+		// ИСПРАВЛЕНО: book_uid вместо book_uid
+		if err := db.Where("username = ? AND book_uid = ?", res.Username, res.BookUid).First(&existing).Error; err != nil {
 			db.Create(&res)
 		}
 	}
@@ -134,7 +149,7 @@ func healthCheck(ctx *gin.Context) {
 	}
 	ctx.JSON(http.StatusOK, gin.H{
 		"status":  "UP",
-		"details": "Host localhost:8070 is active",
+		"details": "Reservation service is healthy",
 	})
 }
 

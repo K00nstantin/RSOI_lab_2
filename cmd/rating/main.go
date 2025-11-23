@@ -19,7 +19,7 @@ func main() {
 	log.Println("Starting rating service...")
 
 	// Конфигурация подключения к базе данных
-	host := getEnv("DB_HOST", "postgres") // Имя сервиса в docker-compose
+	host := getEnv("DB_HOST", "postgres")
 	port := getEnv("DB_PORT", "5432")
 	user := getEnv("DB_USER", "program")
 	password := getEnv("DB_PASSWORD", "test")
@@ -179,7 +179,7 @@ func healthCheck(ctx *gin.Context) {
 	}
 	ctx.JSON(http.StatusOK, gin.H{
 		"status":  "UP",
-		"details": "Host localhost:8050 is active",
+		"details": "Rating service is healthy",
 	})
 }
 
