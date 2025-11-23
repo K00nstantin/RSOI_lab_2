@@ -10,19 +10,19 @@ import (
 )
 
 func InitRatingDB() *gorm.DB {
-	dsn := "host=localhost user=program password=test dbname=ratings port=5433 sslmode=disable TimeZone=UTC"
+	dsn := "host=localhost user=program password=test dbname=ratings port=5432 sslmode=disable TimeZone=UTC"
 	return initDB(dsn, &models.Rating{})
 }
 
 func InitLibraryDB() *gorm.DB {
-	dsn := "host=localhost user=program password=test dbname=libraries port=5433 sslmode=disable TimeZone=UTC"
+	dsn := "host=localhost user=program password=test dbname=libraries port=5432 sslmode=disable TimeZone=UTC"
 	db := initDB(dsn, &models.Library{}, &models.Book{}, &models.LibraryBook{})
 
 	return db
 }
 
 func InitReservationDB() *gorm.DB {
-	dsn := "host=localhost user=program password=test dbname=reservations port=5433 sslmode=disable TimeZone=UTC"
+	dsn := "host=localhost user=program password=test dbname=reservations port=5432 sslmode=disable TimeZone=UTC"
 	return initDB(dsn, &models.Reservation{})
 }
 
