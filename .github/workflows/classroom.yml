@@ -27,16 +27,43 @@ jobs:
     needs: build
     
     steps:
-    - name: Start and test services
+    - name: Debug environment
       run: |
-        docker compose up -d
+        echo "=== Current directory ==="
+        pwd
+        echo "=== Files ==="
+        ls -la
+        echo "=== Docker Compose version ==="
+        docker compose version
+        echo "=== Docker version ==="
+        docker --version
+
+    - name: Start services with Docker Compose
+      run: |
+        # Используем полный путь к файлу для надежности
+        docker compose -f ./docker-compose.yml up -d
+        sleep 10
+        
+        # Проверяем запущенные контейнеры
+        echo "=== Running containers ==="
+        docker ps -a
+
+    - name: Wait for services to be ready
+      run: |
+        # Ждем дольше для инициализации
         sleep 30
         
-        # Health checks
-        curl -f http://localhost:8050/manage/health && echo "Rating healthy"
-        curl -f http://localhost:8060/manage/health && echo "Library healthy"
-        curl -f http://localhost:8070/manage/health && echo "Reservation healthy"
-        curl -f http://localhost:8080/manage/health && echo "Gateway healthy"
+        # Проверяем логи проблемных сервисов
+        echo "=== Service logs ==="
+        docker compose logs --tail=20
+        
+    - name: Health checks
+      run: |
+        echo "=== Health Checks ==="
+        curl -f http://localhost:8050/manage/health && echo "Rating healthy" || echo "Rating unhealthy"
+        curl -f http://localhost:8060/manage/health && echo "Library healthy" || echo "Library unhealthy"
+        curl -f http://localhost:8070/manage/health && echo "Reservation healthy" || echo "Reservation unhealthy"
+        curl -f http://localhost:8080/manage/health && echo "Gateway healthy" || echo "Gateway unhealthy"
 
     - name: Cleanup
       if: always()
