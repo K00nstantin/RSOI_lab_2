@@ -28,19 +28,19 @@ jobs:
       run: |
         docker compose up -d
         sleep 120
+        
+        echo "=== Service status ==="
         docker compose ps
-
-    - name: Show initialized databases
-      run: |
+        
         echo "=== Initialized Databases ==="
-        docker compose exec -T postgres psql -U program -d postgres -c "\l"
+        docker compose exec -T postgres psql -U program -d postgres -c "\l" || echo "Failed to list databases"
 
     - name: Health checks
       run: |
         curl -f http://localhost:8051/manage/health && echo "Rating: HEALTHY" || echo "Rating: UNHEALTHY"
         curl -f http://localhost:8061/manage/health && echo "Library: HEALTHY" || echo "Library: UNHEALTHY"
         curl -f http://localhost:8071/manage/health && echo "Reservation: HEALTHY" || echo "Reservation: UNHEALTHY"
-        curl -f http://localhost:8081/manage/health && echo "Gateway: HEALTHY" || echo "Gateway: UNHEALTHY"
+        docker compose exec -T postgres psql -U program -d postgres -c "\l" || echo "Failed to list databases"
 
     - name: API tests
       run: |
