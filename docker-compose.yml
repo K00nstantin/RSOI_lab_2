@@ -24,7 +24,7 @@ services:
       dockerfile: cmd/rating/Dockerfile
     container_name: rating-service
     ports:
-      - "8051:8050"
+      - "8050:8050"
     depends_on:
       postgres:
         condition: service_healthy
@@ -49,7 +49,7 @@ services:
       dockerfile: cmd/library/Dockerfile
     container_name: library-service
     ports:
-      - "8061:8060"
+      - "8060:8060"
     depends_on:
       postgres:
         condition: service_healthy
@@ -74,7 +74,7 @@ services:
       dockerfile: cmd/reservation/Dockerfile
     container_name: reservation-service
     ports:
-      - "8071:8070"
+      - "8070:8070"
     depends_on:
       postgres:
         condition: service_healthy
@@ -102,7 +102,7 @@ services:
       dockerfile: cmd/gateway/Dockerfile
     container_name: gateway-service
     ports:
-      - "8081:8080"
+      - "8080:8080"
     depends_on:
       rating:
         condition: service_healthy
