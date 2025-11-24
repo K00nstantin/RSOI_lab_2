@@ -29,8 +29,11 @@ jobs:
         docker compose up -d
         
         echo "=== Waiting for services to initialize ==="
-        sleep 120
+        sleep 60
         
+    - name: Debug
+      if: always()
+      run: |
         echo "=== Service status ==="
         docker compose ps
         
@@ -45,7 +48,7 @@ jobs:
         
         echo "=== Testing service health from inside containers ==="
         docker compose exec rating curl -f http://localhost:8050/manage/health || echo "Rating health check failed internally"
-        docker compose exec library curl -f http://localhost:8060/manage/health || echo "Library health check failed internally"
+        docker compose exec library curl -f http://localhost:8060/manage/health || echo "Library health check failed internally" 
 
     - name: Health checks
       run: |
@@ -65,3 +68,7 @@ jobs:
     - name: Cleanup
       if: always()
       run: docker compose down -v
+
+
+
+      
