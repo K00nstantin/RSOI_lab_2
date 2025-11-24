@@ -179,7 +179,7 @@ func healthCheck(ctx *gin.Context) {
 	}
 	ctx.JSON(http.StatusOK, gin.H{
 		"status":  "UP",
-		"details": "Host localhost:8051 is active",
+		"details": "Host localhost:8050 is active",
 	})
 }
 
