@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_USER: program
       POSTGRES_PASSWORD: test
-      POSTGRES_DB: ratings
+      POSTGRES_DB: postgres
     ports:
       - "5432:5432"
     healthcheck:

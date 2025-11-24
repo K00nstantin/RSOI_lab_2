@@ -1,194 +1,46 @@
-name: Docker Build and Health Checks
+name: Docker Build and Test
 
 on:
   push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
-  workflow_dispatch:
+    branches: [main, develop]
 
 jobs:
-  build-images:
-    name: Build Docker Images
+  build-and-test:
+    name: Build and Test Services
     runs-on: ubuntu-latest
     
     steps:
+    # ОБЯЗАТЕЛЬНЫЕ ШАГИ:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Check project structure
-      run: |
-        echo "=== Project Structure ==="
-        find . -type f -name "*.go" | head -20
-        echo "=== pkg directory ==="
-        ls -la pkg/ || echo "pkg directory not found"
-        echo "=== go.mod ==="
-        cat go.mod || echo "go.mod not found"
-
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.23'
-
-    - name: Verify Go modules
-      run: |
-        go mod tidy
-        go mod verify
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Build services
+    - name: Build Docker images
       run: |
         docker build -t rating-service:latest -f cmd/rating/Dockerfile .
         docker build -t gateway-service:latest -f cmd/gateway/Dockerfile .
         docker build -t library-service:latest -f cmd/library/Dockerfile .
         docker build -t reservation-service:latest -f cmd/reservation/Dockerfile .
 
-    - name: Verify Docker images
+    - name: Start and test services
       run: |
-        echo "=== Built images ==="
-        docker images
-        echo "=== Image details ==="
-        docker image inspect rating-service:latest --format '{{ .Config.Cmd }}' || true
-
-  health-checks:
-    name: Health Checks
-    runs-on: ubuntu-latest
-    needs: build-images
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Make scripts executable
-      run: chmod +x scripts/wait-for.sh scripts/wait-script.sh
-
-    - name: Force rebuild and start services
-      run: |
-        echo "=== Force rebuilding all services ==="
-        docker compose down
-        docker compose build --no-cache
+        # Запускаем сервисы
         docker compose up -d
-
-    - name: Check PostgreSQL databases
-      run: |
-        echo "=== Checking existing databases ==="
-        docker compose exec -T postgres psql -U program -c "\l" || echo "PostgreSQL not ready yet"
-
-    - name: Create missing databases
-      run: |
-        echo "=== Creating required databases ==="
-        docker compose exec -T postgres psql -U program -c "CREATE DATABASE IF NOT EXISTS library;" || true
-        docker compose exec -T postgres psql -U program -c "CREATE DATABASE IF NOT EXISTS reservation;" || true
-        echo "=== Final database list ==="
-        docker compose exec -T postgres psql -U program -c "\l" || true
-
-    - name: Wait for PostgreSQL
-      run: |
-        echo "Waiting for PostgreSQL..."
-        timeout 60 bash -c 'until docker compose exec -T postgres pg_isready -U program; do sleep 2; done'
-        echo "PostgreSQL is ready"
-
-    - name: Check all services status
-      run: |
-        echo "=== All services status after startup ==="
-        docker compose ps
-        echo "=== All services logs (first check) ==="
-        docker compose logs --tail=20 || true
-        sleep 10
-
-    - name: Debug database connections
-      run: |
-        echo "=== Debugging database connections ==="
-        for service in rating library reservation; do
-          echo "--- $service service logs ---"
-          docker compose logs --tail=10 $service || true
-        done
-
-    - name: Wait for microservices
-      run: |
-        echo "=== Waiting for microservices to start ==="
-        for port in 8050 8060 8070; do
-          echo "Waiting for port $port..."
-          timeout 30 bash -c 'until nc -z localhost '$port'; do sleep 2; done' && echo "Port $port ready" || echo "Port $port not ready"
-        done
-
-    - name: Test all health endpoints
-      run: |
-        echo "=== Testing all health endpoints ==="
-        set +e
-        services=("rating:8050" "library:8060" "reservation:8070" "gateway:8080")
-        for service in "${services[@]}"; do
-          port="${service#*:}"
-          name="${service%:*}"
-          echo "Testing $name service (port $port):"
-          curl -f http://localhost:$port/manage/health && echo "$name health check: SUCCESS" || echo "$name health check: FAILED"
-        done
-
-    - name: Test API functionality
-      run: |
-        echo "=== Testing API functionality ==="
-        set +e
         
-        echo "1. Testing rating service:"
-        curl -f "http://localhost:8050/api/v1/rating?username=testuser" && echo "Rating API: SUCCESS" || echo "Rating API: FAILED"
+        # Ждем инициализации
+        sleep 30
         
-        echo "2. Testing library service:"
-        curl -f "http://localhost:8060/api/v1/libraries" && echo "Library API: SUCCESS" || echo "Library API: FAILED"
+        # Проверяем здоровье
+        curl -f http://localhost:8050/manage/health && echo "Rating healthy"
+        curl -f http://localhost:8060/manage/health && echo "Library healthy" 
+        curl -f http://localhost:8070/manage/health && echo "Reservation healthy"
+        curl -f http://localhost:8080/manage/health && echo "Gateway healthy"
         
-        echo "3. Testing reservation service:"
-        curl -f "http://localhost:8070/api/v1/reservations" -H "X-User-Name: testuser" && echo "Reservation API: SUCCESS" || echo "Reservation API: FAILED"
-        
-        echo "4. Testing gateway service:"
-        curl -f "http://localhost:8080/api/v1/rating" -H "X-User-Name: testuser" && echo "Gateway API: SUCCESS" || echo "Gateway API: FAILED"
-
-    - name: Check service dependencies
-      run: |
-        echo "=== Checking service dependencies ==="
-        echo "From rating container:"
-        docker compose exec -T rating nc -z postgres 5432 && echo "Rating -> PostgreSQL: SUCCESS" || echo "Rating -> PostgreSQL: FAILED"
-        
-        echo "From library container:"
-        docker compose exec -T library nc -z postgres 5432 && echo "Library -> PostgreSQL: SUCCESS" || echo "Library -> PostgreSQL: FAILED"
-        
-        echo "From reservation container:"
-        docker compose exec -T reservation nc -z postgres 5432 && echo "Reservation -> PostgreSQL: SUCCESS" || echo "Reservation -> PostgreSQL: FAILED"
-        docker compose exec -T reservation nc -z rating 8050 && echo "Reservation -> Rating: SUCCESS" || echo "Reservation -> Rating: FAILED"
-        
-        echo "From gateway container:"
-        docker compose exec -T gateway nc -z rating 8050 && echo "Gateway -> Rating: SUCCESS" || echo "Gateway -> Rating: FAILED"
-        docker compose exec -T gateway nc -z library 8060 && echo "Gateway -> Library: SUCCESS" || echo "Gateway -> Library: FAILED"
-        docker compose exec -T gateway nc -z reservation 8070 && echo "Gateway -> Reservation: SUCCESS" || echo "Gateway -> Reservation: FAILED"
-
-    - name: Show all service details
-      if: always()
-      run: |
-        echo "=== FINAL SERVICE STATUS ==="
-        docker compose ps -a
-        echo "=== ALL SERVICE LOGS ==="
-        docker compose logs --tail=50
-
-    - name: Debug database connection in images
-      if: failure()
-      run: |
-        echo "=== DEBUG: Checking database connection code in images ==="
-        for service in rating library reservation; do
-          echo "--- $service service code ---"
-          docker run --rm ${service}-service:latest sh -c "
-            echo 'DB_HOST env:' \$DB_HOST
-            if [ -f /app/pkg/database/database.go ]; then
-              grep -A 2 'DB_HOST' /app/pkg/database/database.go || echo 'File not found or no DB_HOST'
-            elif [ -f /root/main.go ]; then
-              grep -A 2 'DB_HOST' /root/main.go || echo 'File not found or no DB_HOST'
-            else
-              echo 'No Go files found in expected locations'
-            fi
-          " || echo "Cannot inspect $service image"
-        done
+        # Тестируем API
+        curl -f "http://localhost:8050/api/v1/rating?username=testuser" && echo "Rating API works"
+        curl -f "http://localhost:8060/api/v1/libraries" && echo "Library API works"
+        curl -f "http://localhost:8070/api/v1/reservations" -H "X-User-Name: testuser" && echo "Reservation API works"
+        curl -f "http://localhost:8080/api/v1/rating" -H "X-User-Name: testuser" && echo "Gateway API works"
 
     - name: Cleanup
       if: always()
-      run: |
-        docker compose down -v
-        docker system prune -f
+      run: docker compose down -v
