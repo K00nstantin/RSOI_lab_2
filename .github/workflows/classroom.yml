@@ -24,9 +24,11 @@ jobs:
         docker build -t library-service:latest -f cmd/library/Dockerfile .
         docker build -t reservation-service:latest -f cmd/reservation/Dockerfile .
 
-    - name: Start all services and wait
+    - name: Start all services with debug
       run: |
         docker compose up -d
+        
+        echo "=== Waiting for services to initialize ==="
         sleep 120
         
         echo "=== Service status ==="
@@ -34,13 +36,24 @@ jobs:
         
         echo "=== Initialized Databases ==="
         docker compose exec -T postgres psql -U program -d postgres -c "\l" || echo "Failed to list databases"
+        
+        echo "=== Rating service logs ==="
+        docker compose logs rating --tail=50
+        
+        echo "=== Library service logs ==="
+        docker compose logs library --tail=50
+        
+        echo "=== Testing service health from inside containers ==="
+        docker compose exec rating curl -f http://localhost:8050/manage/health || echo "Rating health check failed internally"
+        docker compose exec library curl -f http://localhost:8060/manage/health || echo "Library health check failed internally"
 
     - name: Health checks
       run: |
+        echo "=== External Health Checks ==="
         curl -f http://localhost:8051/manage/health && echo "Rating: HEALTHY" || echo "Rating: UNHEALTHY"
         curl -f http://localhost:8061/manage/health && echo "Library: HEALTHY" || echo "Library: UNHEALTHY"
         curl -f http://localhost:8071/manage/health && echo "Reservation: HEALTHY" || echo "Reservation: UNHEALTHY"
-        docker compose exec -T postgres psql -U program -d postgres -c "\l" || echo "Failed to list databases"
+        curl -f http://localhost:8081/manage/health && echo "Gateway: HEALTHY" || echo "Gateway: UNHEALTHY"
 
     - name: API tests
       run: |
@@ -48,17 +61,6 @@ jobs:
         curl -f "http://localhost:8061/api/v1/libraries" && echo "Library API: OK" || echo "Library API: FAILED"
         curl -f "http://localhost:8071/api/v1/reservations" -H "X-User-Name: testuser" && echo "Reservation API: OK" || echo "Reservation API: FAILED"
         curl -f "http://localhost:8081/api/v1/rating" -H "X-User-Name: testuser" && echo "Gateway API: OK" || echo "Gateway API: FAILED"
-
-    
-
-    - name: Showing databases
-      if: always()
-      run: |
-        echo "=== Service status ==="
-        docker compose ps
-        
-        echo "=== Initialized Databases ==="
-        docker compose exec -T postgres psql -U program -d postgres -c "\l" || echo "Failed to list databases"
 
     - name: Cleanup
       if: always()
