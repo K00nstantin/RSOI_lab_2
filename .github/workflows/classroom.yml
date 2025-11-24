@@ -49,6 +49,17 @@ jobs:
         curl -f "http://localhost:8071/api/v1/reservations" -H "X-User-Name: testuser" && echo "Reservation API: OK" || echo "Reservation API: FAILED"
         curl -f "http://localhost:8081/api/v1/rating" -H "X-User-Name: testuser" && echo "Gateway API: OK" || echo "Gateway API: FAILED"
 
+    
+
+    - name: Showing databases
+      if: always()
+      run: |
+        echo "=== Service status ==="
+        docker compose ps
+        
+        echo "=== Initialized Databases ==="
+        docker compose exec -T postgres psql -U program -d postgres -c "\l" || echo "Failed to list databases"
+
     - name: Cleanup
       if: always()
       run: docker compose down -v
