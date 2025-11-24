@@ -1,4 +1,4 @@
-name: Docker Build and Test
+name: Docker Build and Health Checks
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-and-test:
-    name: Build and Test Services
+    name: Build Images and Check Health
     runs-on: ubuntu-latest
     
     steps:
@@ -16,131 +16,105 @@ jobs:
 
     - name: Build Docker images
       run: |
-        echo "=== Building rating service ==="
+        echo "=== Building Rating Service ==="
         docker build -t rating-service:latest -f cmd/rating/Dockerfile .
         
-        echo "=== Building other services ==="
+        echo "=== Building Gateway Service ==="
         docker build -t gateway-service:latest -f cmd/gateway/Dockerfile .
+        
+        echo "=== Building Library Service ==="
         docker build -t library-service:latest -f cmd/library/Dockerfile .
+        
+        echo "=== Building Reservation Service ==="
         docker build -t reservation-service:latest -f cmd/reservation/Dockerfile .
+        
+        echo "=== Build completed ==="
+        docker images | grep -E "(rating|gateway|library|reservation)-service"
 
-    - name: Start PostgreSQL and setup databases
+    - name: Start all services
       run: |
-        echo "=== Starting PostgreSQL ==="
-        docker compose up -d postgres
+        echo "=== Starting all services ==="
+        docker compose up -d
         
-        echo "=== Waiting for PostgreSQL ==="
-        timeout 45 bash -c 'until docker compose exec -T postgres pg_isready -U program; do sleep 3; done'
+        echo "=== Waiting for services to initialize ==="
+        sleep 45
         
-        echo "=== Creating and verifying databases ==="
-        docker compose exec -T postgres psql -U program -c "CREATE DATABASE IF NOT EXISTS ratings;"
-        docker compose exec -T postgres psql -U program -c "CREATE DATABASE IF NOT EXISTS libraries;"
-        docker compose exec -T postgres psql -U program -c "CREATE DATABASE IF NOT EXISTS reservations;"
-        
-        echo "=== Database list ==="
-        docker compose exec -T postgres psql -U program -c "\l"
+        echo "=== Service status ==="
+        docker compose ps
 
-    - name: Debug rating service startup
-      run: |
-        echo "=== Testing rating service connectivity ==="
-        
-        # Проверяем, может ли rating service подключиться к PostgreSQL
-        echo "Testing database connection from rating container..."
-        docker run --rm --network rsoi_lab_2_default \
-          -e DB_HOST=postgres \
-          -e DB_PORT=5432 \
-          -e DB_USER=program \
-          -e DB_PASSWORD=test \
-          -e DB_NAME=ratings \
-          rating-service:latest sh -c "nc -z postgres 5432 && echo 'Database connection: SUCCESS' || echo 'Database connection: FAILED'"
-        
-        echo "=== Trying to run rating service manually ==="
-        # Запускаем rating service вручную с подробным выводом
-        docker run --rm --network rsoi_lab_2_default \
-          -e DB_HOST=postgres \
-          -e DB_PORT=5432 \
-          -e DB_USER=program \
-          -e DB_PASSWORD=test \
-          -e DB_NAME=ratings \
-          rating-service:latest || echo "Rating service exited with code: $?"
-
-    - name: Check rating service binary
-      run: |
-        echo "=== Inspecting rating service image ==="
-        
-        # Проверяем, что бинарник существует и исполняем
-        docker run --rm rating-service:latest ls -la /root/
-        echo "=== Checking if binary is executable ==="
-        docker run --rm rating-service:latest sh -c "[ -x /root/rating ] && echo 'Binary is executable' || echo 'Binary is NOT executable'"
-        
-        echo "=== Checking file type ==="
-        docker run --rm rating-service:latest sh -c "file /root/rating"
-
-    - name: Start rating service with detailed logging
-      run: |
-        echo "=== Starting rating service with detailed logging ==="
-        
-        # Запускаем rating service с увеличенным временем ожидания
-        docker compose up -d rating
-        
-        # Даем больше времени для инициализации
-        sleep 30
-        
-        echo "=== Rating service status ==="
-        docker compose ps rating-service
-        
-        echo "=== Rating service logs ==="
-        docker compose logs rating-service --tail=100
-        
-        # Если сервис упал, покажем последние ошибки
-        if ! docker compose ps rating-service | grep -q "Up"; then
-          echo "=== Rating service failed, checking exit code ==="
-          docker compose ps rating-service | grep rating-service
-        fi
-
-    - name: Start other services if rating is healthy
-      run: |
-        # Проверяем, жив ли rating service
-        if docker compose ps rating-service | grep -q "Up"; then
-          echo "=== Starting other services ==="
-          docker compose up -d library reservation gateway
-          sleep 20
-        else
-          echo "=== Rating service is not running, skipping other services ==="
-        fi
-
-    - name: Health checks for running services
+    - name: Health checks
       run: |
         echo "=== Health Checks ==="
         
-        # Проверяем только работающие сервисы
-        services=("rating:8050" "library:8060" "reservation:8070" "gateway:8080")
-        for service in "${services[@]}"; do
-          name="${service%:*}"
-          port="${service#*:}"
-          
-          if docker compose ps $name-service 2>/dev/null | grep -q "Up"; then
-            echo "Testing $name service..."
-            if curl -f --connect-timeout 10 http://localhost:$port/manage/health; then
-              echo "$name: HEALTHY"
-            else
-              echo "$name: UNHEALTHY"
-            fi
-          else
-            echo "$name: NOT RUNNING"
-          fi
-        done
+        echo "1. Testing Rating Service (8051):"
+        if curl -f --retry 3 --retry-delay 5 http://localhost:8051/manage/health; then
+          echo "Rating Service: HEALTHY"
+        else
+          echo "Rating Service: UNHEALTHY"
+          exit 1
+        fi
+        
+        echo "2. Testing Library Service (8061):"
+        if curl -f --retry 3 --retry-delay 5 http://localhost:8061/manage/health; then
+          echo "Library Service: HEALTHY"
+        else
+          echo "Library Service: UNHEALTHY"
+          exit 1
+        fi
+        
+        echo "3. Testing Reservation Service (8071):"
+        if curl -f --retry 3 --retry-delay 5 http://localhost:8071/manage/health; then
+          echo "Reservation Service: HEALTHY"
+        else
+          echo "Reservation Service: UNHEALTHY"
+          exit 1
+        fi
+        
+        echo "4. Testing Gateway Service (8081):"
+        if curl -f --retry 3 --retry-delay 5 http://localhost:8081/manage/health; then
+          echo "Gateway Service: HEALTHY"
+        else
+          echo "Gateway Service: UNHEALTHY"
+          exit 1
+        fi
+        
+        echo "=== All health checks passed! ==="
 
-    - name: Final diagnostics
+    - name: Quick API test
+      run: |
+        echo "=== Quick API Tests ==="
+        
+        # Test Rating API
+        echo "Testing Rating API:"
+        curl -f "http://localhost:8051/api/v1/rating?username=testuser" && echo "Rating API: WORKING" || echo "Rating API: FAILED"
+        
+        # Test Library API
+        echo "Testing Library API:"
+        curl -f "http://localhost:8061/api/v1/libraries" && echo "Library API: WORKING" || echo "Library API: FAILED"
+        
+        # Test Reservation API
+        echo "Testing Reservation API:"
+        curl -f "http://localhost:8071/api/v1/reservations" -H "X-User-Name: testuser" && echo "Reservation API: WORKING" || echo "Reservation API: FAILED"
+        
+        # Test Gateway API
+        echo "Testing Gateway API:"
+        curl -f "http://localhost:8081/api/v1/rating" -H "X-User-Name: testuser" && echo "Gateway API: WORKING" || echo "Gateway API: FAILED"
+
+    - name: Final status
       if: always()
       run: |
         echo "=== Final container status ==="
-        docker compose ps -a
+        docker compose ps
         
-        echo "=== All service logs ==="
-        docker compose logs --tail=50
+        echo "=== Service logs overview ==="
+        for service in postgres rating library reservation gateway; do
+          echo "--- $service logs (last 5 lines) ---"
+          docker compose logs --tail=5 $service || echo "No logs for $service"
+        done
 
     - name: Cleanup
       if: always()
       run: |
+        echo "=== Cleaning up ==="
         docker compose down -v
+        docker system prune -f
