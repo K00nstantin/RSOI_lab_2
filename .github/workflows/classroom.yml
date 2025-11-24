@@ -14,12 +14,8 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Verify files exist
-      run: |
-        echo "=== Checking script file ==="
-        ls -la postgres/scripts/db-v4.sql
-        echo "=== Checking docker-compose volumes ==="
-        grep -A 5 "volumes:" docker-compose.yml
+    - name: Remove version from docker-compose
+      run: sed -i '/^version:/d' docker-compose.yml
 
     - name: Build Docker images
       run: |
@@ -28,22 +24,16 @@ jobs:
         docker build -t library-service:latest -f cmd/library/Dockerfile .
         docker build -t reservation-service:latest -f cmd/reservation/Dockerfile .
 
-    - name: Start PostgreSQL and debug mounting
-      run: |
-        docker compose up -d postgres
-        sleep 10
-        
-        echo "=== Debug: Checking mounted files ==="
-        docker compose exec postgres ls -la /docker-entrypoint-initdb.d/ || echo "Cannot check init directory"
-        
-        echo "=== Debug: PostgreSQL logs ==="
-        docker compose logs postgres | grep -i "running" | head -10 || echo "No init logs found"
-
     - name: Start all services and wait
       run: |
         docker compose up -d
-        sleep 90
+        sleep 120
         docker compose ps
+
+    - name: Show initialized databases
+      run: |
+        echo "=== Initialized Databases ==="
+        docker compose exec -T postgres psql -U program -d postgres -c "\l"
 
     - name: Health checks
       run: |
