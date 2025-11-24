@@ -24,7 +24,7 @@ jobs:
         docker build -t library-service:latest -f cmd/library/Dockerfile .
         docker build -t reservation-service:latest -f cmd/reservation/Dockerfile .
 
-    - name: Start services and wait
+    - name: Start all services and wait
       run: |
         docker compose up -d
         sleep 90
