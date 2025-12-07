@@ -23,7 +23,7 @@ func main() {
 	port := getEnv("DB_PORT", "5432")
 	user := getEnv("DB_USER", "program")
 	password := getEnv("DB_PASSWORD", "test")
-	dbname := getEnv("DB_NAME", "reservation")
+	dbname := getEnv("DB_NAME", "reservations")
 
 	// Формируем строку подключения
 	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=UTC",

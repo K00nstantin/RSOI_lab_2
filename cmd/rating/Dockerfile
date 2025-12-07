@@ -13,7 +13,7 @@ COPY . .
 RUN go build -o rating ./cmd/rating/main.go
 
 FROM alpine:latest
-RUN apk --no-cache add ca-certificates wget
+RUN apk --no-cache add ca-certificates wget curl
 
 WORKDIR /root/
 COPY --from=builder /app/rating .

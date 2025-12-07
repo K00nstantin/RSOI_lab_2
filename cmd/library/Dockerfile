@@ -9,7 +9,7 @@ COPY . .
 RUN go build -o library ./cmd/library/main.go
 
 FROM alpine:latest
-RUN apk --no-cache add ca-certificates wget
+RUN apk --no-cache add ca-certificates wget curl
 
 WORKDIR /root/
 COPY --from=builder /app/library .
