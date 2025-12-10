@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -20,9 +22,20 @@ var (
 
 func main() {
 	ratingServiceURL = getEnv("RATING_SERVICE_URL", "http://localhost:8050")
+	libraryServiceURL = getEnv("LIBRARY_SERVICE_URL", "http://localhost:8060")
+	reservationServiceURL = getEnv("RESERVATION_SERVICE_URL", "http://localhost:8070")
+
+	httpClient = &http.Client{
+		Timeout: 10 * time.Second,
+	}
 
 	r := gin.Default()
 
+	r.GET("/api/v1/libraries", getLibrariesHandler)
+	r.GET("/api/v1/libraries/:libraryUid/books", getLibraryBooksHandler)
+	r.GET("/api/v1/reservations", getReservationsHandler)
+	r.POST("/api/v1/reservations", createReservationHandler)
+	r.POST("/api/v1/reservations/:reservationUid/return", returnBookHandler)
 	r.GET("/api/v1/rating", getRatingHandler)
 	r.GET("/manage/health", healthCheck)
 
@@ -82,6 +95,9 @@ func getLibraryBooksHandler(c *gin.Context) {
 
 func getReservationsHandler(c *gin.Context) {
 	username := c.GetHeader("X-User-Name")
+	if username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "X-User-Name header is required"})
+	}
 	url := reservationServiceURL + "/api/v1/reservations"
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -123,6 +139,136 @@ func getReservationsHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, enrichedReservations)
 }
 
+func createReservationHandler(c *gin.Context) {
+	username := c.GetHeader("X-User-Name")
+	if username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "X-User-Name header must be contained"})
+		return
+	}
+	var request struct {
+		BookUid    string `json: "bookUid", binding: "required"`
+		LibraryUid string `json: "bookUid", binding: "required"`
+		TillDate   string `json: "tillDate", binding: "required"`
+	}
+	err := c.ShouldBindJSON(&request)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "validation error",
+			"errors": map[string]string{
+				"field": "request",
+				"error": err.Error(),
+			},
+		})
+		return
+	}
+	bookinfo := getBookInfo(request.LibraryUid, request.BookUid)
+	if bookinfo == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to find the book in the library"})
+		return
+	}
+	avaliablecount, ok := bookinfo["avaliableCount"].(float64)
+	if !ok || avaliablecount <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "book not avaliable"})
+		return
+	}
+	body, err := json.Marshal(request)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create request body"})
+		return
+	}
+	url := reservationServiceURL + "/api/v1/reservations"
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create the request"})
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-Name", username)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to perform the request"})
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		rbody, _ := io.ReadAll(resp.Body)
+		c.Data(resp.StatusCode, "application/json", rbody)
+		return
+	}
+	var reservation map[string]interface{}
+	err = json.NewDecoder(resp.Body).Decode(&reservation)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode the response"})
+		return
+	}
+	libraryinfo := getLibraryInfo(request.LibraryUid)
+	rating := getUserRating(username)
+	response := map[string]interface{}{
+		"reservationUid": reservation["reservationUid"],
+		"status":         reservation["status"],
+		"startDate":      reservation["startDate"],
+		"tillDate":       reservation["tillDate"],
+		"book": map[string]interface{}{
+			"bookUid": bookinfo["bookUid"],
+			"name":    bookinfo["name"],
+			"author":  bookinfo["author"],
+			"genre":   bookinfo["genre"],
+		},
+		"library": libraryinfo,
+		"rating":  rating,
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+func returnBookHandler(c *gin.Context) {
+	username := c.GetHeader("X-User-Name")
+	if username == "" {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "header should be contained"})
+		return
+	}
+	reservationUid := c.Param("reservationUid")
+	var request struct {
+		Condition string `json: "condition", binding: "required"`
+		Date      string `json: "date", binding: "required"`
+	}
+	err := c.ShouldBindJSON(&request)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{
+			"message": "validation error",
+			"errors": map[string]string{
+				"field": "request",
+				"error": err.Error(),
+			},
+		})
+		return
+	}
+	reqbody, err := json.Marshal(request)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create request body"})
+		return
+	}
+	url := fmt.Sprintf("%s/api/v1/reservations/%s/return", reservationServiceURL, reservationUid)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqbody))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create the request"})
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-Name", username)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to ewecute the response"})
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		c.Data(resp.StatusCode, "application/json", body)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 func getRatingHandler(c *gin.Context) {
 	username := c.GetHeader("X-User-Name")
 	if username == "" {
@@ -130,28 +276,25 @@ func getRatingHandler(c *gin.Context) {
 		return
 	}
 
-	resp, err := http.Get(ratingServiceURL + "/api/v1/rating?username=" + username)
+	url := ratingServiceURL + "api/v1/rating"
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "rating service unavailable"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create the request"})
+		return
+	}
+	req.Header.Set("X-User-Name", username)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to ewecute the response"})
 		return
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		c.JSON(resp.StatusCode, gin.H{"error": "failed to get rating"})
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read response body"})
 		return
 	}
-
-	var ratingResponse struct {
-		Stars int `json:"stars"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&ratingResponse); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse response"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"stars": ratingResponse.Stars})
+	c.Data(resp.StatusCode, "application/json", body)
 }
 
 func healthCheck(c *gin.Context) {
