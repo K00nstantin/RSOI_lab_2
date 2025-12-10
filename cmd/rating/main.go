@@ -84,61 +84,53 @@ func main() {
 }
 
 func getRating(c *gin.Context) {
-	username := c.Query("username")
+	username := c.GetHeader("X-User-Name")
 	if username == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "username is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "X-User-Name header is required"})
 		return
 	}
-
 	var rating models.Rating
-	if err := db.Where("username = ?", username).First(&rating).Error; err != nil {
-		// Создаем нового пользователя с рейтингом по умолчанию
-		newRating := models.Rating{
+	err := db.Where("username = ?", username).First(&rating).Error
+	if err != nil {
+		newrating := models.Rating{
 			Username: username,
 			Stars:    1,
 		}
-		db.Create(&newRating)
-		c.JSON(http.StatusOK, gin.H{"stars": newRating.Stars})
+		db.Create(&newrating)
+		c.JSON(http.StatusOK, gin.H{"stars": newrating.Stars})
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{"stars": rating.Stars})
 }
 
 func updateRating(c *gin.Context) {
 	var request struct {
-		Username string `json:"username"`
-		Stars    int    `json:"stars"`
+		Username string `json: "username"`
+		Stars    int    `json: "stars"`
 	}
-
-	if err := c.BindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+	err := c.ShouldBindJSON(&request)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request format"})
 		return
 	}
-
-	// Валидация рейтинга
 	if request.Stars < 1 {
 		request.Stars = 1
-	} else if request.Stars > 100 {
+	}
+	if request.Stars > 100 {
 		request.Stars = 100
 	}
-
 	var rating models.Rating
-	result := db.Where("username = ?", request.Username).First(&rating)
-
-	if result.Error == nil {
-		// Обновляем существующего пользователя
+	query := db.Where("username = ?", request.Username).First(&rating)
+	if query.Error == nil {
 		rating.Stars = request.Stars
 		db.Save(&rating)
 	} else {
-		// Создаем нового пользователя
 		rating = models.Rating{
 			Username: request.Username,
 			Stars:    request.Stars,
 		}
 		db.Create(&rating)
 	}
-
 	c.JSON(http.StatusOK, gin.H{"stars": rating.Stars})
 }
 
