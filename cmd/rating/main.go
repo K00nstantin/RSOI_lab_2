@@ -18,20 +18,17 @@ var db *gorm.DB
 func main() {
 	log.Println("Starting rating service...")
 
-	// Конфигурация подключения к базе данных
 	host := getEnv("DB_HOST", "postgres")
 	port := getEnv("DB_PORT", "5432")
 	user := getEnv("DB_USER", "program")
 	password := getEnv("DB_PASSWORD", "test")
 	dbname := getEnv("DB_NAME", "ratings")
 
-	// Формируем строку подключения
 	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=UTC",
 		host, user, password, dbname, port)
 
 	log.Printf("Connecting to database: %s@%s:%s/%s", user, host, port, dbname)
 
-	// Подключение к базе данных с повторными попытками
 	var err error
 	maxRetries := 10
 	for i := 0; i < maxRetries; i++ {
@@ -49,7 +46,6 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
-	// Автоматическое создание таблиц используя модели из pkg/models
 	err = db.AutoMigrate(&models.Rating{})
 	if err != nil {
 		log.Fatalf("Database migration failed: %v", err)
@@ -57,7 +53,6 @@ func main() {
 
 	log.Println("Database connected successfully")
 
-	// Проверка подключения к базе данных
 	sqlDB, err := db.DB()
 	if err != nil {
 		log.Fatalf("Failed to get database instance: %v", err)
@@ -71,7 +66,6 @@ func main() {
 
 	seedTestData()
 
-	// Настройка HTTP сервера с Gin
 	server := gin.Default()
 	server.GET("/api/v1/rating", getRating)
 	server.PUT("/api/v1/rating", updateRating)

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -90,12 +91,107 @@ func getReservations(c *gin.Context) {
 	}
 
 	var reservations []models.Reservation
-	if err := db.Where("username = ?", username).Find(&reservations).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	err := db.Where("username = ?", username).Find(&reservations)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error})
+		return
+	}
+	items := make([]gin.H, len(reservations))
+	for i, res := range reservations {
+		items[i] = gin.H{
+			"reservationUid": res.ReservationUid,
+			"status":         res.Status,
+			"startDate":      res.StartDate.Format("2006-01-02"),
+			"tillDate":       res.TillDate.Format("2006-01-02"),
+			"bookUid":        res.BookUid,
+			"libraryUid":     res.LibraryUid,
+		}
+	}
+
+	c.JSON(http.StatusOK, items)
+}
+
+func createReservations(c *gin.Context) {
+	username := c.GetHeader("X-User-Data")
+	if username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "X-Name-Header should be required"})
+		return
+	}
+	var request struct {
+		BookUid    string `json:"bookUid" binding:"required"`
+		LibraryUid string `json:"libraryUid" binding:"required"`
+		TillDate   string `json:"tillDate" binding:"required"`
+	}
+	err := c.ShouldBindJSON(&request)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request",
+			"details": err.Error(),
+		})
+		return
+	}
+	tillDate, err := time.Parse("2006-01-02", request.TillDate)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid data format"})
+		return
+	}
+	reservation := models.Reservation{
+		ReservationUid: uuid.New().String(),
+		Username:       username,
+		BookUid:        request.BookUid,
+		LibraryUid:     request.LibraryUid,
+		Status:         "RENTED",
+		StartDate:      time.Now(),
+		TillDate:       tillDate,
+	}
+	err = db.Create(&reservation).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to crerate reservation"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"reservationUid": reservation.ReservationUid,
+		"status":         reservation.Status,
+		"startDate":      reservation.StartDate.Format("2006-01-02"),
+		"tillDate":       reservation.TillDate.Format("2006-01-02"),
+		"bookUid":        reservation.BookUid,
+		"libraryUid":     reservation.LibraryUid,
+	})
+}
+
+func returnBook(c *gin.Context) {
+	username := c.GetHeader("X-User-Name")
+	if username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "X-User-Name header is required"})
+		return
+	}
+	reservationUid := c.Param("reservationUid")
+
+	var request struct {
+		Condition string `json:"condition" binding:"required"`
+		Date      string `json:"date" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request", "details": err.Error()})
+		return
+	}
+	if request.Condition != "EXCELLENT" && request.Condition != "GOOD" && request.Condition != "BAD" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Condition must be EXCELLENT, GOOD, or BAD"})
 		return
 	}
 
-	c.JSON(http.StatusOK, reservations)
+	var reservation models.Reservation
+	if err := db.Where("reservation_uid = ? AND username = ?", reservationUid, username).First(&reservation).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Reservation not found"})
+		return
+	}
+	reservation.Status = "RETURNED"
+	if err := db.Save(&reservation).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func seedTestData() {
