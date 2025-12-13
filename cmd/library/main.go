@@ -132,13 +132,13 @@ func getLibraries(c *gin.Context) {
 
 func getLibraryBooks(c *gin.Context) {
 	libraryUid := c.Param("libraryUid")
-	pageStr := c.DefaultQuery("page", "0")
+	pageStr := c.DefaultQuery("page", "1")
 	sizeStr := c.DefaultQuery("size", "10")
 	showAll := c.DefaultQuery("showall", "false")
 
 	page, err := strconv.Atoi(pageStr)
-	if err != nil || page < 0 {
-		page = 0
+	if err != nil || page < 1 {
+		page = 1
 	}
 
 	size, err := strconv.Atoi(sizeStr)
@@ -151,11 +151,11 @@ func getLibraryBooks(c *gin.Context) {
 	var library models.Library
 	err = db.Where("library_uid = ?", libraryUid).First(&library).Error
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "library not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "library not found"})
 		return
 	}
 	var libraryBooks []models.LibraryBook
-	query := db.Where("LibraryId = ?", library.ID).Preload("Book")
+	query := db.Where("library_id = ?", library.ID).Preload("Book")
 
 	if !showall {
 		query = query.Where("available_count > 0")
@@ -164,7 +164,7 @@ func getLibraryBooks(c *gin.Context) {
 	var totalelem int64
 	query.Model(&models.LibraryBook{}).Count(&totalelem)
 
-	offset := page * size
+	offset := (page - 1) * size
 	err = query.Offset(offset).Limit(size).Find(&libraryBooks).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
