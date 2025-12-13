@@ -132,7 +132,7 @@ func updateRating(c *gin.Context) {
 func adjustRating(c *gin.Context) {
 	var request struct {
 		Username string `json:"username" binding:"required"`
-		Delta    int    `json:"delta"` // Положительное значение для увеличения, отрицательное для уменьшения
+		Delta    int    `json:"delta"`
 	}
 	err := c.ShouldBindJSON(&request)
 	if err != nil {
@@ -143,7 +143,6 @@ func adjustRating(c *gin.Context) {
 	var rating models.Rating
 	err = db.Where("username = ?", request.Username).First(&rating).Error
 	if err != nil {
-		// Если пользователя нет, создаем с начальным рейтингом
 		rating = models.Rating{
 			Username: request.Username,
 			Stars:    1,
@@ -154,7 +153,6 @@ func adjustRating(c *gin.Context) {
 		}
 	}
 
-	// Изменяем рейтинг
 	newStars := rating.Stars + request.Delta
 	if newStars < 1 {
 		newStars = 1
@@ -182,7 +180,6 @@ func seedTestData() {
 	for _, user := range testUsers {
 		var existing models.Rating
 		if err := db.Where("username = ?", user.Username).First(&existing).Error; err != nil {
-			// Создаем пользователя только если он не существует
 			db.Create(&user)
 		}
 	}

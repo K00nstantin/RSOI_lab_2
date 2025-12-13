@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -315,7 +316,70 @@ func increaseBookCount(c *gin.Context) {
 }
 
 func seedTestData() {
-	// Заполнение тестовыми данными
+	testLibraryUid := "83575e12-7ce0-48ee-9931-51919ff3c9ee"
+	testBookUid := "f7cdc58f-2caf-4b15-9727-f89dcc629b27"
+
+	var testLib models.Library
+	if err := db.Where("library_uid = ?", testLibraryUid).First(&testLib).Error; err != nil {
+		testLib = models.Library{
+			LibraryUid: testLibraryUid,
+			Name:       "Библиотека имени 7 Непьющих",
+			Address:    "2-я Бауманская ул., д.5, стр.1",
+			City:       "Москва",
+		}
+		if err := db.Create(&testLib).Error; err != nil {
+			log.Printf("Failed to create test library: %v", err)
+		} else {
+			log.Printf("Created test library: %s", testLib.Name)
+		}
+	} else {
+		testLib.Name = "Библиотека имени 7 Непьющих"
+		testLib.Address = "2-я Бауманская ул., д.5, стр.1"
+		testLib.City = "Москва"
+		db.Save(&testLib)
+	}
+
+	var testBook models.Book
+	if err := db.Where("book_uid = ?", testBookUid).First(&testBook).Error; err != nil {
+		testBook = models.Book{
+			BookUid:   testBookUid,
+			Name:      "Краткий курс C++ в 7 томах",
+			Author:    "Бьерн Страуструп",
+			Genre:     "Научная фантастика",
+			Condition: "EXCELLENT",
+		}
+		if err := db.Create(&testBook).Error; err != nil {
+			log.Printf("Failed to create test book: %v", err)
+		} else {
+			log.Printf("Created test book: %s", testBook.Name)
+		}
+	} else {
+		testBook.Name = "Краткий курс C++ в 7 томах"
+		testBook.Author = "Бьерн Страуструп"
+		testBook.Genre = "Научная фантастика"
+		testBook.Condition = "EXCELLENT"
+		db.Save(&testBook)
+	}
+
+	var libraryBook models.LibraryBook
+	if err := db.Where("library_id = ? AND book_id = ?", testLib.ID, testBook.ID).
+		First(&libraryBook).Error; err != nil {
+		libraryBook = models.LibraryBook{
+			LibraryID:      testLib.ID,
+			BookID:         testBook.ID,
+			AvailableCount: 1,
+		}
+		if err := db.Create(&libraryBook).Error; err != nil {
+			log.Printf("Failed to link book to library: %v", err)
+		} else {
+			log.Printf("Linked book %s to library %s with available_count: %d",
+				testBook.Name, testLib.Name, libraryBook.AvailableCount)
+		}
+	} else {
+		libraryBook.AvailableCount = 1
+		db.Save(&libraryBook)
+	}
+
 	libraries := []models.Library{
 		{Name: "Central Library", Address: "123 Main St", City: "Moscow"},
 		{Name: "North Library", Address: "456 North Ave", City: "Moscow"},
@@ -325,7 +389,10 @@ func seedTestData() {
 	for _, lib := range libraries {
 		var existing models.Library
 		if err := db.Where("name = ?", lib.Name).First(&existing).Error; err != nil {
-			db.Create(&lib)
+			lib.LibraryUid = uuid.New().String()
+			if err := db.Create(&lib).Error; err != nil {
+				log.Printf("Failed to create library %s: %v", lib.Name, err)
+			}
 		}
 	}
 	log.Println("Library test data seeded")

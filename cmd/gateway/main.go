@@ -642,7 +642,6 @@ func adjustUserRating(username string, delta int) error {
 }
 
 func isConditionWorse(originalCondition, returnedCondition string) bool {
-	// EXCELLENT > GOOD > BAD
 	conditionOrder := map[string]int{
 		"EXCELLENT": 3,
 		"GOOD":      2,
@@ -653,8 +652,7 @@ func isConditionWorse(originalCondition, returnedCondition string) bool {
 	returnedOrder, ok2 := conditionOrder[returnedCondition]
 
 	if !ok1 || !ok2 {
-		return false // Если условие неизвестно, считаем что не ухудшилось
+		return false
 	}
-
 	return returnedOrder < originalOrder
 }

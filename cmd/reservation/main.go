@@ -19,7 +19,6 @@ var db *gorm.DB
 func main() {
 	log.Println("Starting reservation service...")
 
-	// Конфигурация подключения к базе данных
 	host := getEnv("DB_HOST", "postgres")
 	port := getEnv("DB_PORT", "5432")
 	user := getEnv("DB_USER", "program")
@@ -50,7 +49,6 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
-	// Автоматическое создание таблиц используя модели из pkg/models
 	err = db.AutoMigrate(&models.Reservation{})
 	if err != nil {
 		log.Fatalf("Database migration failed: %v", err)
@@ -58,7 +56,6 @@ func main() {
 
 	log.Println("Database connected successfully")
 
-	// Проверка подключения к базе данных
 	sqlDB, err := db.DB()
 	if err != nil {
 		log.Fatalf("Failed to get database instance: %v", err)
@@ -72,7 +69,6 @@ func main() {
 
 	seedTestData()
 
-	// Настройка HTTP сервера с Gin
 	server := gin.Default()
 	server.GET("/api/v1/reservations", getReservations)
 	server.GET("/api/v1/reservations/active/count", getActiveReservationsCount)
