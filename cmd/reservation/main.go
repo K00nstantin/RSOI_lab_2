@@ -25,13 +25,10 @@ func main() {
 	password := getEnv("DB_PASSWORD", "test")
 	dbname := getEnv("DB_NAME", "reservations")
 
-	// Формируем строку подключения
 	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=UTC",
 		host, user, password, dbname, port)
 
 	log.Printf("Connecting to database: %s@%s:%s/%s", user, host, port, dbname)
-
-	// Подключение к базе данных с повторными попытками
 	var err error
 	maxRetries := 10
 	for i := 0; i < maxRetries; i++ {
@@ -140,7 +137,7 @@ func createReservations(c *gin.Context) {
 		BookUid       string `json:"bookUid" binding:"required"`
 		LibraryUid    string `json:"libraryUid" binding:"required"`
 		TillDate      string `json:"tillDate" binding:"required"`
-		BookCondition string `json:"bookCondition"` // Состояние книги на момент выдачи
+		BookCondition string `json:"bookCondition"`
 	}
 	err := c.ShouldBindJSON(&request)
 	if err != nil {
@@ -191,7 +188,7 @@ func returnBook(c *gin.Context) {
 	var request struct {
 		Condition string `json:"condition" binding:"required"`
 		Date      string `json:"date" binding:"required"`
-		Status    string `json:"status"` // EXPIRED или RETURNED (определяется в Gateway)
+		Status    string `json:"status"`
 	}
 
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -209,11 +206,9 @@ func returnBook(c *gin.Context) {
 		return
 	}
 
-	// Устанавливаем статус: EXPIRED или RETURNED (если передан в запросе)
 	if request.Status == "EXPIRED" || request.Status == "RETURNED" {
 		reservation.Status = request.Status
 	} else {
-		// Если статус не передан, определяем по дате
 		returnDate, err := time.Parse("2006-01-02", request.Date)
 		if err == nil {
 			if returnDate.After(reservation.TillDate) {
@@ -222,7 +217,7 @@ func returnBook(c *gin.Context) {
 				reservation.Status = "RETURNED"
 			}
 		} else {
-			reservation.Status = "RETURNED" // По умолчанию
+			reservation.Status = "RETURNED"
 		}
 	}
 
@@ -230,11 +225,10 @@ func returnBook(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.Status(http.StatusNoContent)
+	c.Data(http.StatusNoContent, "application/json", nil)
 }
 
 func seedTestData() {
-	// Заполнение тестовыми данными - ИСПРАВЛЕНО: BookUid и LibraryUid (с маленькой d)
 	reservations := []models.Reservation{
 		{
 			Username:   "alice",
@@ -256,7 +250,6 @@ func seedTestData() {
 
 	for _, res := range reservations {
 		var existing models.Reservation
-		// ИСПРАВЛЕНО: book_uid вместо book_uid
 		if err := db.Where("username = ? AND book_uid = ?", res.Username, res.BookUid).First(&existing).Error; err != nil {
 			db.Create(&res)
 		}
