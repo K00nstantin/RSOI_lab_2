@@ -54,6 +54,19 @@ jobs:
         
         echo "All health checks passed!"
 
+    - name: Install Newman
+      run: |
+        npm install -g newman
+
+    - name: Run integration tests
+      run: |
+        echo "Running integration tests with Postman..."
+        newman run v4/postman/collection.json \
+          -e v4/postman/environment.json \
+          --reporters cli \
+          --bail || exit 1
+        echo "Integration tests passed!"
+
     - name: Show service logs on failure
       if: failure()
       run: |
