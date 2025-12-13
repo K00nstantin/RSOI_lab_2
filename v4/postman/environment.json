@@ -6,6 +6,21 @@
 			"key": "baseUrl",
 			"value": "http://localhost:8080",
 			"enabled": true
+		},
+		{
+			"key": "libraryUid",
+			"value": "83575e12-7ce0-48ee-9931-51919ff3c9ee",
+			"enabled": true
+		},
+		{
+			"key": "bookUid",
+			"value": "f7cdc58f-2caf-4b15-9727-f89dcc629b27",
+			"enabled": true
+		},
+		{
+			"key": "username",
+			"value": "Test Max",
+			"enabled": true
 		}
 	],
 	"_postman_variable_scope": "environment",

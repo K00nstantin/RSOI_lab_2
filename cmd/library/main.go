@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -332,7 +331,8 @@ func seedTestData() {
 		} else {
 			log.Printf("Created test library: %s", testLib.Name)
 		}
-	} else {
+	}
+	if testLib.Name != "Библиотека имени 7 Непьющих" || testLib.City != "Москва" {
 		testLib.Name = "Библиотека имени 7 Непьющих"
 		testLib.Address = "2-я Бауманская ул., д.5, стр.1"
 		testLib.City = "Москва"
