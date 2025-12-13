@@ -128,7 +128,7 @@ func getLibraries(c *gin.Context) {
 }
 
 func getLibraryBooks(c *gin.Context) {
-	liibraryUid := c.Param("libraryUid")
+	libraryUid := c.Param("libraryUid")
 	pageStr := c.DefaultQuery("page", "0")
 	sizeStr := c.DefaultQuery("size", "10")
 	showAll := c.DefaultQuery("showall", "false")
@@ -146,7 +146,7 @@ func getLibraryBooks(c *gin.Context) {
 	showall := showAll == "true"
 
 	var library models.Library
-	err = db.Where("libraryUid = ?", liibraryUid).First(&library).Error
+	err = db.Where("library_uid = ?", libraryUid).First(&library).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "library not found"})
 		return
@@ -155,7 +155,7 @@ func getLibraryBooks(c *gin.Context) {
 	query := db.Where("LibraryId = ?", library.ID).Preload("Book")
 
 	if !showall {
-		query = query.Where("AvaliableCount > 0")
+		query = query.Where("available_count > 0")
 	}
 
 	var totalelem int64

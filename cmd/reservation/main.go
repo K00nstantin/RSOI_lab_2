@@ -75,6 +75,8 @@ func main() {
 	// Настройка HTTP сервера с Gin
 	server := gin.Default()
 	server.GET("/api/v1/reservations", getReservations)
+	server.POST("/api/v1/reservations", createReservations)
+	server.POST("/api/v1/reservations/:reservationUid/return", returnBook)
 	server.GET("/manage/health", healthCheck)
 
 	log.Println("Reservation service starting on :8070")
@@ -91,9 +93,9 @@ func getReservations(c *gin.Context) {
 	}
 
 	var reservations []models.Reservation
-	err := db.Where("username = ?", username).Find(&reservations)
+	err := db.Where("username = ?", username).Find(&reservations).Error
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	items := make([]gin.H, len(reservations))
@@ -112,9 +114,9 @@ func getReservations(c *gin.Context) {
 }
 
 func createReservations(c *gin.Context) {
-	username := c.GetHeader("X-User-Data")
+	username := c.GetHeader("X-User-Name")
 	if username == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "X-Name-Header should be required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "X-User-Name header is required"})
 		return
 	}
 	var request struct {
@@ -146,7 +148,7 @@ func createReservations(c *gin.Context) {
 	}
 	err = db.Create(&reservation).Error
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to crerate reservation"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create reservation"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{

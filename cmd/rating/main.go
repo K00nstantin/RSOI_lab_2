@@ -99,8 +99,8 @@ func getRating(c *gin.Context) {
 
 func updateRating(c *gin.Context) {
 	var request struct {
-		Username string `json: "username"`
-		Stars    int    `json: "stars"`
+		Username string `json:"username"`
+		Stars    int    `json:"stars"`
 	}
 	err := c.ShouldBindJSON(&request)
 	if err != nil {

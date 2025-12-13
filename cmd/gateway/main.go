@@ -73,7 +73,7 @@ func getLibraryBooksHandler(c *gin.Context) {
 	queryparams := c.Request.URL.Query().Encode()
 	url := fmt.Sprintf("%s/api/v1/libraries/%s/books", libraryServiceURL, libraryUid)
 	if queryparams != "" {
-		url += queryparams
+		url += "?" + queryparams
 	}
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -98,6 +98,7 @@ func getReservationsHandler(c *gin.Context) {
 	username := c.GetHeader("X-User-Name")
 	if username == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "X-User-Name header is required"})
+		return
 	}
 	url := reservationServiceURL + "/api/v1/reservations"
 	request, err := http.NewRequest("GET", url, nil)
@@ -147,9 +148,9 @@ func createReservationHandler(c *gin.Context) {
 		return
 	}
 	var request struct {
-		BookUid    string `json: "bookUid", binding: "required"`
-		LibraryUid string `json: "bookUid", binding: "required"`
-		TillDate   string `json: "tillDate", binding: "required"`
+		BookUid    string `json:"bookUid" binding:"required"`
+		LibraryUid string `json:"libraryUid" binding:"required"`
+		TillDate   string `json:"tillDate" binding:"required"`
 	}
 	err := c.ShouldBindJSON(&request)
 	if err != nil {
@@ -167,9 +168,9 @@ func createReservationHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to find the book in the library"})
 		return
 	}
-	avaliablecount, ok := bookinfo["avaliableCount"].(float64)
-	if !ok || avaliablecount <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "book not avaliable"})
+	availableCount, ok := bookinfo["availableCount"].(float64)
+	if !ok || availableCount <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "book not available"})
 		return
 	}
 	body, err := json.Marshal(request)
@@ -224,17 +225,17 @@ func createReservationHandler(c *gin.Context) {
 func returnBookHandler(c *gin.Context) {
 	username := c.GetHeader("X-User-Name")
 	if username == "" {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "header should be contained"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "X-User-Name header is required"})
 		return
 	}
 	reservationUid := c.Param("reservationUid")
 	var request struct {
-		Condition string `json: "condition", binding: "required"`
-		Date      string `json: "date", binding: "required"`
+		Condition string `json:"condition" binding:"required"`
+		Date      string `json:"date" binding:"required"`
 	}
 	err := c.ShouldBindJSON(&request)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
 			"message": "validation error",
 			"errors": map[string]string{
 				"field": "request",
@@ -258,11 +259,11 @@ func returnBookHandler(c *gin.Context) {
 	req.Header.Set("X-User-Name", username)
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to ewecute the response"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to execute the request"})
 		return
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusNoContent {
 		body, _ := io.ReadAll(resp.Body)
 		c.Data(resp.StatusCode, "application/json", body)
 		return
@@ -277,7 +278,7 @@ func getRatingHandler(c *gin.Context) {
 		return
 	}
 
-	url := ratingServiceURL + "api/v1/rating"
+	url := ratingServiceURL + "/api/v1/rating"
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create the request"})
@@ -286,7 +287,7 @@ func getRatingHandler(c *gin.Context) {
 	req.Header.Set("X-User-Name", username)
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to ewecute the response"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to execute the request"})
 		return
 	}
 	defer resp.Body.Close()
