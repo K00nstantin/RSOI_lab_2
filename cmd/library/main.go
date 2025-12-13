@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -18,20 +19,17 @@ var db *gorm.DB
 func main() {
 	log.Println("Starting library service...")
 
-	// Конфигурация подключения к базе данных
 	host := getEnv("DB_HOST", "postgres")
 	port := getEnv("DB_PORT", "5432")
 	user := getEnv("DB_USER", "program")
 	password := getEnv("DB_PASSWORD", "test")
 	dbname := getEnv("DB_NAME", "libraries")
 
-	// Формируем строку подключения
 	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=UTC",
 		host, user, password, dbname, port)
 
 	log.Printf("Connecting to database: %s@%s:%s/%s", user, host, port, dbname)
 
-	// Подключение к базе данных с повторными попытками
 	var err error
 	maxRetries := 10
 	for i := 0; i < maxRetries; i++ {
@@ -49,7 +47,6 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
-	// Автоматическое создание таблиц используя модели из pkg/models
 	err = db.AutoMigrate(&models.Library{}, &models.Book{}, &models.LibraryBook{})
 	if err != nil {
 		log.Fatalf("Database migration failed: %v", err)
@@ -57,7 +54,6 @@ func main() {
 
 	log.Println("Database connected successfully")
 
-	// Проверка подключения к базе данных
 	sqlDB, err := db.DB()
 	if err != nil {
 		log.Fatalf("Failed to get database instance: %v", err)
@@ -71,9 +67,11 @@ func main() {
 
 	seedTestData()
 
-	// Настройка HTTP сервера с Gin
 	server := gin.Default()
 	server.GET("/api/v1/libraries", getLibraries)
+	server.GET("/api/v1/libraries/:libraryUid", getLibrary)
+	server.GET("/api/v1/libraries/:libraryUid/books", getLibraryBooks)
+	server.GET("/api/v1/libraries/:libraryUid/books/:bookUid", getLibraryBook)
 	server.GET("/manage/health", healthCheck)
 
 	log.Println("Library service starting on :8060")
@@ -84,19 +82,159 @@ func main() {
 
 func getLibraries(c *gin.Context) {
 	city := c.Query("city")
+	pagestr := c.DefaultQuery("page", "0")
+	sizestr := c.DefaultQuery("size", "10")
 
-	var libraries []models.Library
-	query := db
-	if city != "" {
-		query = query.Where("city = ?", city)
+	page, err := strconv.Atoi(pagestr)
+	if err != nil || page < 0 {
+		page = 0
 	}
 
-	if err := query.Find(&libraries).Error; err != nil {
+	size, err := strconv.Atoi(sizestr)
+	if err != nil || size < 1 || size > 100 {
+		size = 10
+	}
+
+	if city == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "city is required"})
+		return
+	}
+	var libraries []models.Library
+	query := db.Where("city = ?", city)
+	var totalelem int64
+	query.Model(&libraries).Count(&totalelem)
+
+	offset := page * size
+	err = query.Offset(offset).Limit(size).Find(&libraries).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	items := make([]gin.H, len(libraries))
+	for i, lib := range libraries {
+		items[i] = gin.H{
+			"libraryUid": lib.LibraryUid,
+			"name":       lib.Name,
+			"address":    lib.Address,
+			"city":       lib.City,
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"page":          page,
+		"pageSize":      size,
+		"totalElements": totalelem,
+		"items":         items,
+	})
+}
+
+func getLibraryBooks(c *gin.Context) {
+	liibraryUid := c.Param("libraryUid")
+	pageStr := c.DefaultQuery("page", "0")
+	sizeStr := c.DefaultQuery("size", "10")
+	showAll := c.DefaultQuery("showall", "false")
+
+	page, err := strconv.Atoi(pageStr)
+	if err != nil || page < 0 {
+		page = 0
+	}
+
+	size, err := strconv.Atoi(sizeStr)
+	if err != nil || size < 1 || size > 100 {
+		size = 10
+	}
+
+	showall := showAll == "true"
+
+	var library models.Library
+	err = db.Where("libraryUid = ?", liibraryUid).First(&library).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "library not found"})
+		return
+	}
+	var libraryBooks []models.LibraryBook
+	query := db.Where("LibraryId = ?", library.ID).Preload("Book")
+
+	if !showall {
+		query = query.Where("AvaliableCount > 0")
+	}
+
+	var totalelem int64
+	query.Model(&models.LibraryBook{}).Count(&totalelem)
+
+	offset := page * size
+	err = query.Offset(offset).Limit(size).Find(&libraryBooks).Error
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, libraries)
+	items := make([]gin.H, len(libraryBooks))
+	for i, lb := range libraryBooks {
+		items[i] = gin.H{
+			"bookUid":        lb.Book.BookUid,
+			"name":           lb.Book.Name,
+			"author":         lb.Book.Author,
+			"genre":          lb.Book.Genre,
+			"condition":      lb.Book.Condition,
+			"availableCount": lb.AvailableCount,
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"page":          page,
+		"pageSize":      size,
+		"totalElements": totalelem,
+		"items":         items,
+	})
+}
+
+func getLibrary(c *gin.Context) {
+	libraryUid := c.Param("libraryUid")
+
+	var library models.Library
+	if err := db.Where("library_uid = ?", libraryUid).First(&library).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Library not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"libraryUid": library.LibraryUid,
+		"name":       library.Name,
+		"address":    library.Address,
+		"city":       library.City,
+	})
+}
+
+func getLibraryBook(c *gin.Context) {
+	libraryUid := c.Param("libraryUid")
+	bookUid := c.Param("bookUid")
+
+	var library models.Library
+	if err := db.Where("library_uid = ?", libraryUid).First(&library).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Library not found"})
+		return
+	}
+
+	var book models.Book
+	if err := db.Where("book_uid = ?", bookUid).First(&book).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Book not found"})
+		return
+	}
+
+	var libraryBook models.LibraryBook
+	if err := db.Where("library_id = ? AND book_id = ?", library.ID, book.ID).
+		First(&libraryBook).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Book not found in library"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"bookUid":        book.BookUid,
+		"name":           book.Name,
+		"author":         book.Author,
+		"genre":          book.Genre,
+		"condition":      book.Condition,
+		"availableCount": libraryBook.AvailableCount,
+	})
 }
 
 func seedTestData() {

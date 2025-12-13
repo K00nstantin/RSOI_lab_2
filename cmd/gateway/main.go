@@ -67,6 +67,7 @@ func getLibrariesHandler(c *gin.Context) {
 	}
 	c.Data(response.StatusCode, "application/json", body)
 }
+
 func getLibraryBooksHandler(c *gin.Context) {
 	libraryUid := c.Param("libraryUid")
 	queryparams := c.Request.URL.Query().Encode()
@@ -312,8 +313,6 @@ func getEnv(key, defaultValue string) string {
 	return value
 }
 
-// helper functions
-
 func getBookInfo(libraryUid, bookUid string) map[string]interface{} {
 	url := fmt.Sprintf("%s/api/v1/libraries/%s/books/%s", libraryServiceURL, libraryUid, bookUid)
 	request, err := http.NewRequest("GET", url, nil)
@@ -362,22 +361,26 @@ func getLibraryInfo(libraryUid string) map[string]interface{} {
 
 func getUserRating(username string) map[string]interface{} {
 	url := ratingServiceURL + "/api/v1/rating"
-	request, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return map[string]interface{}{"stars": 0}
 	}
-	response, err := httpClient.Do(request)
+	req.Header.Set("X-User-Name", username)
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return map[string]interface{}{"stars": 0}
 	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
 		return map[string]interface{}{"stars": 0}
 	}
+
 	var rating map[string]interface{}
-	err = json.NewDecoder(response.Body).Decode(&rating)
-	if err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&rating); err != nil {
 		return map[string]interface{}{"stars": 0}
 	}
+
 	return rating
 }
