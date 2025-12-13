@@ -85,12 +85,12 @@ func main() {
 
 func getLibraries(c *gin.Context) {
 	city := c.Query("city")
-	pagestr := c.DefaultQuery("page", "0")
+	pagestr := c.DefaultQuery("page", "1")
 	sizestr := c.DefaultQuery("size", "10")
 
 	page, err := strconv.Atoi(pagestr)
-	if err != nil || page < 0 {
-		page = 0
+	if err != nil || page < 1 {
+		page = 1
 	}
 
 	size, err := strconv.Atoi(sizestr)
@@ -107,7 +107,7 @@ func getLibraries(c *gin.Context) {
 	var totalelem int64
 	query.Model(&libraries).Count(&totalelem)
 
-	offset := page * size
+	offset := (page - 1) * size
 	err = query.Offset(offset).Limit(size).Find(&libraries).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
