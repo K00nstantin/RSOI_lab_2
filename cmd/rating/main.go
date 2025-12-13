@@ -69,6 +69,7 @@ func main() {
 	server := gin.Default()
 	server.GET("/api/v1/rating", getRating)
 	server.PUT("/api/v1/rating", updateRating)
+	server.POST("/api/v1/rating/adjust", adjustRating)
 	server.GET("/manage/health", healthCheck)
 
 	log.Println("Rating service starting on :8050")
@@ -125,6 +126,49 @@ func updateRating(c *gin.Context) {
 		}
 		db.Create(&rating)
 	}
+	c.JSON(http.StatusOK, gin.H{"stars": rating.Stars})
+}
+
+func adjustRating(c *gin.Context) {
+	var request struct {
+		Username string `json:"username" binding:"required"`
+		Delta    int    `json:"delta"` // Положительное значение для увеличения, отрицательное для уменьшения
+	}
+	err := c.ShouldBindJSON(&request)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request format"})
+		return
+	}
+
+	var rating models.Rating
+	err = db.Where("username = ?", request.Username).First(&rating).Error
+	if err != nil {
+		// Если пользователя нет, создаем с начальным рейтингом
+		rating = models.Rating{
+			Username: request.Username,
+			Stars:    1,
+		}
+		if err := db.Create(&rating).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create rating"})
+			return
+		}
+	}
+
+	// Изменяем рейтинг
+	newStars := rating.Stars + request.Delta
+	if newStars < 1 {
+		newStars = 1
+	}
+	if newStars > 100 {
+		newStars = 100
+	}
+
+	rating.Stars = newStars
+	if err := db.Save(&rating).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update rating"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{"stars": rating.Stars})
 }
 

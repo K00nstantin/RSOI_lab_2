@@ -75,6 +75,7 @@ func main() {
 	// Настройка HTTP сервера с Gin
 	server := gin.Default()
 	server.GET("/api/v1/reservations", getReservations)
+	server.GET("/api/v1/reservations/active/count", getActiveReservationsCount)
 	server.POST("/api/v1/reservations", createReservations)
 	server.POST("/api/v1/reservations/:reservationUid/return", returnBook)
 	server.GET("/manage/health", healthCheck)
@@ -107,10 +108,30 @@ func getReservations(c *gin.Context) {
 			"tillDate":       res.TillDate.Format("2006-01-02"),
 			"bookUid":        res.BookUid,
 			"libraryUid":     res.LibraryUid,
+			"bookCondition":  res.BookCondition,
 		}
 	}
 
 	c.JSON(http.StatusOK, items)
+}
+
+func getActiveReservationsCount(c *gin.Context) {
+	username := c.GetHeader("X-User-Name")
+	if username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "X-User-Name header is required"})
+		return
+	}
+
+	var count int64
+	err := db.Model(&models.Reservation{}).
+		Where("username = ? AND status = ?", username, "RENTED").
+		Count(&count).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"count": count})
 }
 
 func createReservations(c *gin.Context) {
@@ -120,9 +141,10 @@ func createReservations(c *gin.Context) {
 		return
 	}
 	var request struct {
-		BookUid    string `json:"bookUid" binding:"required"`
-		LibraryUid string `json:"libraryUid" binding:"required"`
-		TillDate   string `json:"tillDate" binding:"required"`
+		BookUid       string `json:"bookUid" binding:"required"`
+		LibraryUid    string `json:"libraryUid" binding:"required"`
+		TillDate      string `json:"tillDate" binding:"required"`
+		BookCondition string `json:"bookCondition"` // Состояние книги на момент выдачи
 	}
 	err := c.ShouldBindJSON(&request)
 	if err != nil {
@@ -143,6 +165,7 @@ func createReservations(c *gin.Context) {
 		BookUid:        request.BookUid,
 		LibraryUid:     request.LibraryUid,
 		Status:         "RENTED",
+		BookCondition:  request.BookCondition,
 		StartDate:      time.Now(),
 		TillDate:       tillDate,
 	}
@@ -172,6 +195,7 @@ func returnBook(c *gin.Context) {
 	var request struct {
 		Condition string `json:"condition" binding:"required"`
 		Date      string `json:"date" binding:"required"`
+		Status    string `json:"status"` // EXPIRED или RETURNED (определяется в Gateway)
 	}
 
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -188,7 +212,24 @@ func returnBook(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Reservation not found"})
 		return
 	}
-	reservation.Status = "RETURNED"
+
+	// Устанавливаем статус: EXPIRED или RETURNED (если передан в запросе)
+	if request.Status == "EXPIRED" || request.Status == "RETURNED" {
+		reservation.Status = request.Status
+	} else {
+		// Если статус не передан, определяем по дате
+		returnDate, err := time.Parse("2006-01-02", request.Date)
+		if err == nil {
+			if returnDate.After(reservation.TillDate) {
+				reservation.Status = "EXPIRED"
+			} else {
+				reservation.Status = "RETURNED"
+			}
+		} else {
+			reservation.Status = "RETURNED" // По умолчанию
+		}
+	}
+
 	if err := db.Save(&reservation).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

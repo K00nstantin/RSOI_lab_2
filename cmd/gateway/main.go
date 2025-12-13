@@ -173,7 +173,37 @@ func createReservationHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "book not available"})
 		return
 	}
-	body, err := json.Marshal(request)
+
+	// Проверка количества книг на руках и лимита по рейтингу
+	activeReservationsCount := getActiveReservationsCount(username)
+	rating := getUserRating(username)
+	stars, ok := rating["stars"].(float64)
+	if !ok {
+		stars = 0
+	}
+
+	if activeReservationsCount >= int(stars) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "User has reached the maximum number of books allowed by rating",
+		})
+		return
+	}
+
+	// Получаем состояние книги на момент выдачи
+	bookCondition, ok := bookinfo["condition"].(string)
+	if !ok {
+		bookCondition = "EXCELLENT" // Значение по умолчанию
+	}
+
+	// Добавляем состояние книги в запрос
+	requestWithCondition := map[string]interface{}{
+		"bookUid":       request.BookUid,
+		"libraryUid":    request.LibraryUid,
+		"tillDate":      request.TillDate,
+		"bookCondition": bookCondition,
+	}
+
+	body, err := json.Marshal(requestWithCondition)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create request body"})
 		return
@@ -203,8 +233,18 @@ func createReservationHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode the response"})
 		return
 	}
+
+	// Уменьшаем количество доступных книг в Library Service
+	err = decreaseBookCount(request.LibraryUid, request.BookUid)
+	if err != nil {
+		// Если не удалось уменьшить количество, это критическая ошибка
+		// В реальной системе здесь может быть откат транзакции
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update book availability"})
+		return
+	}
+
 	libraryinfo := getLibraryInfo(request.LibraryUid)
-	rating := getUserRating(username)
+	rating = getUserRating(username)
 	response := map[string]interface{}{
 		"reservationUid": reservation["reservationUid"],
 		"status":         reservation["status"],
@@ -244,11 +284,50 @@ func returnBookHandler(c *gin.Context) {
 		})
 		return
 	}
-	reqbody, err := json.Marshal(request)
+
+	// Валидация condition
+	if request.Condition != "EXCELLENT" && request.Condition != "GOOD" && request.Condition != "BAD" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Condition must be EXCELLENT, GOOD, or BAD"})
+		return
+	}
+
+	// Получаем информацию о резервации
+	reservation, err := getReservationInfo(reservationUid, username)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Reservation not found"})
+		return
+	}
+
+	// Парсим даты
+	returnDate, err := time.Parse("2006-01-02", request.Date)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid date format. Use YYYY-MM-DD"})
+		return
+	}
+
+	tillDate, err := time.Parse("2006-01-02", reservation["tillDate"].(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse reservation date"})
+		return
+	}
+
+	// Определяем статус: EXPIRED если дата возврата больше till_date
+	status := "RETURNED"
+	if returnDate.After(tillDate) {
+		status = "EXPIRED"
+	}
+
+	// Обновляем статус резервации
+	reqbody, err := json.Marshal(map[string]interface{}{
+		"condition": request.Condition,
+		"date":      request.Date,
+		"status":    status,
+	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create request body"})
 		return
 	}
+
 	url := fmt.Sprintf("%s/api/v1/reservations/%s/return", reservationServiceURL, reservationUid)
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqbody))
 	if err != nil {
@@ -268,6 +347,49 @@ func returnBookHandler(c *gin.Context) {
 		c.Data(resp.StatusCode, "application/json", body)
 		return
 	}
+
+	// Увеличиваем количество доступных книг в Library Service
+	libraryUid := reservation["libraryUid"].(string)
+	bookUid := reservation["bookUid"].(string)
+	err = increaseBookCount(libraryUid, bookUid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update book availability"})
+		return
+	}
+
+	// Обновляем рейтинг пользователя
+	bookConditionAtRental, ok := reservation["bookCondition"].(string)
+	if !ok {
+		bookConditionAtRental = "EXCELLENT" // Значение по умолчанию
+	}
+
+	// Проверяем условия для изменения рейтинга
+	isLate := returnDate.After(tillDate)
+	isConditionWorse := isConditionWorse(bookConditionAtRental, request.Condition)
+	isOnTimeAndGoodCondition := !isLate && !isConditionWorse
+
+	var ratingDelta int
+	if isOnTimeAndGoodCondition {
+		// Увеличиваем на 1 звезду
+		ratingDelta = 1
+	} else {
+		// Уменьшаем на 10 за каждое условие
+		if isLate {
+			ratingDelta -= 10
+		}
+		if isConditionWorse {
+			ratingDelta -= 10
+		}
+	}
+
+	if ratingDelta != 0 {
+		err = adjustUserRating(username, ratingDelta)
+		if err != nil {
+			// Логируем ошибку, но не прерываем процесс возврата
+			log.Printf("Failed to update user rating: %v", err)
+		}
+	}
+
 	c.Status(http.StatusNoContent)
 }
 
@@ -384,4 +506,155 @@ func getUserRating(username string) map[string]interface{} {
 	}
 
 	return rating
+}
+
+func getActiveReservationsCount(username string) int {
+	url := reservationServiceURL + "/api/v1/reservations/active/count"
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return 0
+	}
+	req.Header.Set("X-User-Name", username)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0
+	}
+
+	count, ok := result["count"].(float64)
+	if !ok {
+		return 0
+	}
+
+	return int(count)
+}
+
+func decreaseBookCount(libraryUid, bookUid string) error {
+	url := fmt.Sprintf("%s/api/v1/libraries/%s/books/%s/decrease", libraryServiceURL, libraryUid, bookUid)
+	req, err := http.NewRequest("POST", url, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to decrease book count: status %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+func increaseBookCount(libraryUid, bookUid string) error {
+	url := fmt.Sprintf("%s/api/v1/libraries/%s/books/%s/increase", libraryServiceURL, libraryUid, bookUid)
+	req, err := http.NewRequest("POST", url, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to increase book count: status %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+func getReservationInfo(reservationUid, username string) (map[string]interface{}, error) {
+	url := fmt.Sprintf("%s/api/v1/reservations", reservationServiceURL)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-User-Name", username)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to get reservations: status %d", resp.StatusCode)
+	}
+
+	var reservations []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&reservations); err != nil {
+		return nil, err
+	}
+
+	// Ищем нужную резервацию
+	for _, res := range reservations {
+		if res["reservationUid"] == reservationUid {
+			return res, nil
+		}
+	}
+
+	return nil, fmt.Errorf("reservation not found")
+}
+
+func adjustUserRating(username string, delta int) error {
+	url := ratingServiceURL + "/api/v1/rating/adjust"
+	body, err := json.Marshal(map[string]interface{}{
+		"username": username,
+		"delta":    delta,
+	})
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to adjust rating: status %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+func isConditionWorse(originalCondition, returnedCondition string) bool {
+	// EXCELLENT > GOOD > BAD
+	conditionOrder := map[string]int{
+		"EXCELLENT": 3,
+		"GOOD":      2,
+		"BAD":       1,
+	}
+
+	originalOrder, ok1 := conditionOrder[originalCondition]
+	returnedOrder, ok2 := conditionOrder[returnedCondition]
+
+	if !ok1 || !ok2 {
+		return false // Если условие неизвестно, считаем что не ухудшилось
+	}
+
+	return returnedOrder < originalOrder
 }

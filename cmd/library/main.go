@@ -72,6 +72,8 @@ func main() {
 	server.GET("/api/v1/libraries/:libraryUid", getLibrary)
 	server.GET("/api/v1/libraries/:libraryUid/books", getLibraryBooks)
 	server.GET("/api/v1/libraries/:libraryUid/books/:bookUid", getLibraryBook)
+	server.POST("/api/v1/libraries/:libraryUid/books/:bookUid/decrease", decreaseBookCount)
+	server.POST("/api/v1/libraries/:libraryUid/books/:bookUid/increase", increaseBookCount)
 	server.GET("/manage/health", healthCheck)
 
 	log.Println("Library service starting on :8060")
@@ -233,6 +235,81 @@ func getLibraryBook(c *gin.Context) {
 		"author":         book.Author,
 		"genre":          book.Genre,
 		"condition":      book.Condition,
+		"availableCount": libraryBook.AvailableCount,
+	})
+}
+
+func decreaseBookCount(c *gin.Context) {
+	libraryUid := c.Param("libraryUid")
+	bookUid := c.Param("bookUid")
+
+	var library models.Library
+	if err := db.Where("library_uid = ?", libraryUid).First(&library).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Library not found"})
+		return
+	}
+
+	var book models.Book
+	if err := db.Where("book_uid = ?", bookUid).First(&book).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Book not found"})
+		return
+	}
+
+	var libraryBook models.LibraryBook
+	if err := db.Where("library_id = ? AND book_id = ?", library.ID, book.ID).
+		First(&libraryBook).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Book not found in library"})
+		return
+	}
+
+	if libraryBook.AvailableCount <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Book not available"})
+		return
+	}
+
+	libraryBook.AvailableCount--
+	if err := db.Save(&libraryBook).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update book count"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"bookUid":        book.BookUid,
+		"availableCount": libraryBook.AvailableCount,
+	})
+}
+
+func increaseBookCount(c *gin.Context) {
+	libraryUid := c.Param("libraryUid")
+	bookUid := c.Param("bookUid")
+
+	var library models.Library
+	if err := db.Where("library_uid = ?", libraryUid).First(&library).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Library not found"})
+		return
+	}
+
+	var book models.Book
+	if err := db.Where("book_uid = ?", bookUid).First(&book).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Book not found"})
+		return
+	}
+
+	var libraryBook models.LibraryBook
+	if err := db.Where("library_id = ? AND book_id = ?", library.ID, book.ID).
+		First(&libraryBook).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Book not found in library"})
+		return
+	}
+
+	libraryBook.AvailableCount++
+	if err := db.Save(&libraryBook).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update book count"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"bookUid":        book.BookUid,
 		"availableCount": libraryBook.AvailableCount,
 	})
 }

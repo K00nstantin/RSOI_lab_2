@@ -86,8 +86,7 @@ services:
       DB_USER: program
       DB_PASSWORD: test
       DB_NAME: reservations
-      RATING_SERVICE_URL: http://rating:8050
-    command: ["sh", "-c", "./wait-for.sh postgres:5432 rating:8050 -- ./reservation"]
+    command: ["sh", "-c", "./wait-for.sh postgres:5432 -- ./reservation"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8070/manage/health"]
       interval: 10s
